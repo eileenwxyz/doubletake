@@ -147,3 +147,14 @@ vite.config.ts.timestamp-*
 
 # Turbo Repo
 .turbo
+
+# Never commit any .env file (covers .env, .env.local, .env.production.local, etc.).
+# Only .env.example, which holds placeholder values, may be committed.
+.env*
+!.env.example
+
+# Next.js
+next-env.d.ts
+.vercel
+*.pem
+.DS_Store
