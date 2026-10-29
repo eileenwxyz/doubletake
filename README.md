@@ -61,3 +61,6 @@ API keys go in a local `.env` file (for example `.env.local`). Every `.env*`
 file is listed in `.gitignore` so secrets are never committed. The only
 exception is `.env.example`, which may be committed with placeholder values to
 show which variables are needed.
+
+On the deployed site, `PARALLEL_API_KEY` is set in Vercel's environment
+variables and only used on the server, so visitors never need a key or see it.
