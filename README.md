@@ -7,8 +7,13 @@ email is legitimate before they reply. You give it a company name, a URL, or a
 recruiter's email, and it looks the details up and returns an honest, sourced
 verdict.
 
-Lookups will use [Parallel](https://parallel.ai)'s Search API. Right now the app
-is only a placeholder home page and does not make any API calls yet.
+## How it works
+
+You enter a company name (and, optionally, the recruiter's email), and the
+server runs two [Parallel](https://parallel.ai) Search API queries at once: one
+for the company's official website and careers page, and one for scam warnings
+about the company or the email's domain. The results are listed as links with
+their sources; there is no verdict yet.
 
 > Doubletake is an independent project built on Parallel's API. It is not
 > affiliated with, endorsed by, or sponsored by Parallel.
