@@ -5,14 +5,14 @@ import { Redis } from "@upstash/redis";
 
 // Limits for POST /api/check, stored in Upstash Redis (Vercel Marketplace).
 //
-// - Each visitor gets DAILY_LIMIT checks per UTC day, keyed by a one-way
+// - Each visitor gets DAILY_CHECK_LIMIT checks per UTC day, keyed by a one-way
 //   HMAC-SHA256 hash of their IP address. The IP itself is never stored.
-// - All visitors together get MONTHLY_CAP checks per UTC calendar month.
+// - All visitors together get MONTHLY_CHECK_CAP checks per UTC calendar month.
 //
 // A check is only counted when it is allowed, and both counters are checked
 // and updated in one Lua script, so concurrent requests cannot overshoot.
 
-const DAILY_LIMIT = 10;
+const DEFAULT_DAILY_LIMIT = 10;
 const DEFAULT_MONTHLY_CAP = 1000;
 
 export type LimitResult =
@@ -50,9 +50,19 @@ function redis(): Redis | null {
   return client;
 }
 
+// Reads a non-negative integer from the environment, or returns the fallback
+// when the variable is unset or not a valid number.
+function envLimit(name: string, fallback: number): number {
+  const value = Number(process.env[name]);
+  return Number.isInteger(value) && value >= 0 ? value : fallback;
+}
+
+function dailyLimit(): number {
+  return envLimit("DAILY_CHECK_LIMIT", DEFAULT_DAILY_LIMIT);
+}
+
 function monthlyCap(): number {
-  const value = Number(process.env.MONTHLY_CHECK_CAP);
-  return Number.isInteger(value) && value >= 0 ? value : DEFAULT_MONTHLY_CAP;
+  return envLimit("MONTHLY_CHECK_CAP", DEFAULT_MONTHLY_CAP);
 }
 
 function hashIp(ip: string, secret: string): string {
@@ -100,7 +110,7 @@ export async function takeCheck(ip: string): Promise<LimitResult> {
     code = await store.eval(
       SCRIPT,
       [`checks:visitor:${day}:${hashIp(ip, secret)}`, `checks:total:${month}`],
-      [DAILY_LIMIT, monthlyCap(), dayTtl, monthTtl],
+      [dailyLimit(), monthlyCap(), dayTtl, monthTtl],
     );
   } catch {
     throw new RateLimitError("Rate limit storage could not be reached.");

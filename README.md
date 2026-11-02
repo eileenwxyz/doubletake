@@ -77,6 +77,7 @@ variables and only used on the server, so visitors never need a key or see it.
 - Each visitor gets 10 checks per day (UTC), keyed by an HMAC-SHA256 hash of
   their IP address. The IP itself is never stored. Over the limit, the API
   returns 429 with "You've used today's checks. Try again tomorrow."
+  Change the limit with `DAILY_CHECK_LIMIT`.
 - All visitors together get 1,000 checks per calendar month (UTC). After that,
   every check returns 429 with "Daily checks are used up. Try again tomorrow."
   and Parallel is not called. Change the cap with `MONTHLY_CHECK_CAP`.
@@ -87,7 +88,8 @@ Only checks that pass input validation count. Counters live in Upstash Redis
 - `KV_REST_API_URL` and `KV_REST_API_TOKEN`: set by the Upstash integration
   (`UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` also work).
 - `IP_HASH_SECRET`: a long random string used to hash IP addresses.
-- `MONTHLY_CHECK_CAP` (optional): defaults to 1000.
+- `DAILY_CHECK_LIMIT` (optional): checks per visitor per day, defaults to 10.
+- `MONTHLY_CHECK_CAP` (optional): checks for everyone per month, defaults to 1000.
 
 In production, if storage or `IP_HASH_SECRET` is missing or Redis can't be
 reached, checks fail with a generic error instead of calling Parallel without
