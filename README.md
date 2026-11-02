@@ -69,3 +69,26 @@ show which variables are needed.
 
 On the deployed site, `PARALLEL_API_KEY` is set in Vercel's environment
 variables and only used on the server, so visitors never need a key or see it.
+
+## Rate limits
+
+`POST /api/check` is limited before it calls Parallel:
+
+- Each visitor gets 10 checks per day (UTC), keyed by an HMAC-SHA256 hash of
+  their IP address. The IP itself is never stored. Over the limit, the API
+  returns 429 with "You've used today's checks. Try again tomorrow."
+- All visitors together get 1,000 checks per calendar month (UTC). After that,
+  every check returns 429 with "Daily checks are used up. Try again tomorrow."
+  and Parallel is not called. Change the cap with `MONTHLY_CHECK_CAP`.
+
+Only checks that pass input validation count. Counters live in Upstash Redis
+(added through the Vercel Marketplace). These server-side variables are needed:
+
+- `KV_REST_API_URL` and `KV_REST_API_TOKEN`: set by the Upstash integration
+  (`UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` also work).
+- `IP_HASH_SECRET`: a long random string used to hash IP addresses.
+- `MONTHLY_CHECK_CAP` (optional): defaults to 1000.
+
+In production, if storage or `IP_HASH_SECRET` is missing or Redis can't be
+reached, checks fail with a generic error instead of calling Parallel without
+limits. In local development without these variables, limits are skipped.

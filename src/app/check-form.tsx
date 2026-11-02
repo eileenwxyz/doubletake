@@ -38,7 +38,10 @@ export default function CheckForm() {
         body: JSON.stringify({ company, email }),
       });
       const data = await response.json();
-      if (response.status === 400 && typeof data.error === "string") {
+      if (
+        (response.status === 400 || response.status === 429) &&
+        typeof data.error === "string"
+      ) {
         setError(data.error);
       } else if (!response.ok) {
         setError(GENERIC_ERROR);

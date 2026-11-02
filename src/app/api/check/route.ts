@@ -1,7 +1,10 @@
 import { checkCompany } from "@/lib/parallel";
+import { clientIp, takeCheck } from "@/lib/rate-limit";
 
 const MAX_LENGTH = 200;
 const GENERIC_ERROR = "Something went wrong. Try again.";
+const VISITOR_LIMIT_ERROR = "You've used today's checks. Try again tomorrow.";
+const MONTHLY_CAP_ERROR = "Daily checks are used up. Try again tomorrow.";
 
 function badRequest(error: string) {
   return Response.json({ error }, { status: 400 });
@@ -44,6 +47,19 @@ export async function POST(request: Request) {
       }
       emailDomain = match[1].toLowerCase();
     }
+  }
+
+  // Limits run after validation, so a typo doesn't cost a check.
+  try {
+    const limit = await takeCheck(clientIp(request));
+    if (!limit.allowed) {
+      const error =
+        limit.reason === "monthly" ? MONTHLY_CAP_ERROR : VISITOR_LIMIT_ERROR;
+      return Response.json({ error }, { status: 429 });
+    }
+  } catch {
+    // Fail closed: never call Parallel when limits can't be checked.
+    return Response.json({ error: GENERIC_ERROR }, { status: 503 });
   }
 
   try {
