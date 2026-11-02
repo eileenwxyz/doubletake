@@ -54,7 +54,12 @@ async function search(
         "Content-Type": "application/json",
         "x-api-key": apiKey,
       },
-      body: JSON.stringify({ objective, search_queries: queries }),
+      body: JSON.stringify({
+        objective,
+        search_queries: queries,
+        mode: "advanced",
+        advanced_settings: { max_results: 10 },
+      }),
       signal: AbortSignal.timeout(30_000),
     });
   } catch {
