@@ -160,3 +160,13 @@ describe("content age", () => {
     expect(formatAge("not a date", NOW)).toBe("Date unknown");
   });
 });
+
+describe("recruiting list wording", () => {
+  it("reads 'only contact candidates from' with bare domains", () => {
+    expect(
+      findRecruitingList(
+        "Acme recruiters only contact candidates from acme.example or talentbridge-hiring.example.",
+      )?.entries,
+    ).toEqual(["acme.example", "talentbridge-hiring.example"]);
+  });
+});

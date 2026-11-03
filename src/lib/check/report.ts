@@ -240,7 +240,9 @@ export function buildReport(input: CheckInput): CheckResponse {
     else verdict = "no_red_flags";
 
     const passed = sender.outcome === "passes" || sender.outcome === "neutral";
-    if (!passed && sender.case !== "free_no_domain" && sender.case !== "unknown_company") {
+    if (sender.case === "unrelated_unread") {
+      subtitle = SUBTITLES.pagesUnchecked;
+    } else if (!passed && sender.case !== "free_no_domain" && sender.case !== "unknown_company") {
       subtitle = SUBTITLES.notCompanyChannel;
     } else if (passed && (warnings.length || fraudNotice)) {
       subtitle = SUBTITLES.scammersUsedName;
@@ -313,6 +315,9 @@ export function buildReport(input: CheckInput): CheckResponse {
         break;
       case "unrelated":
         add(0, "caution", `The sender's domain ${d} is not connected to ${company}'s official domain ${o}.`, firstOfficialUrl, "Official");
+        break;
+      case "unrelated_unread":
+        add(0, "caution", `The sender's domain ${d} is not connected to ${company}'s official domain ${o}, and some of ${company}'s pages couldn't be read to check for other recruiting domains.`, firstOfficialUrl, "Official");
         break;
       case "unknown_company":
         add(0, "neutral", `No official domain for ${company} was found to compare ${d} with.`, null, "Other");

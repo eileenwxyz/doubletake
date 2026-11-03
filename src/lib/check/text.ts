@@ -127,7 +127,7 @@ export type RecruitingList = {
   quote: string | null;
 };
 
-const CONTACT_WORDS = /(\b(e-?mails?|domains?|address(es)?)\b|@)/i;
+const CONTACT_WORDS = /(\b(e-?mails?|domains?|address(es)?|contact\w*|reach out)\b|@)/i;
 const RECRUIT_WORDS = /(recruit|candidate|applicant|hiring|talent|job seeker|interview)/i;
 const LIMIT_WORDS = /\b(only|exclusively|verified|official|always|solely)\b/i;
 const NEGATION = /\b(never|not|don't|do not|won't|will not)\b/i;

@@ -24,6 +24,7 @@ export type SenderCase =
   | "free_with_domain"
   | "free_no_domain"
   | "unrelated"
+  | "unrelated_unread"
   | "unknown_company";
 
 export type SenderResult = {
@@ -90,7 +91,12 @@ export function evaluateSender(input: SenderInput): SenderResult {
 
   // 6. Anything else. Without an official domain there is nothing to compare
   // the sender with, so the answer is "not enough" rather than a warning.
-  return officialDomain
-    ? result(6, "strong_warning", "unrelated")
-    : result(6, "not_enough", "unknown_company");
+  // When official pages couldn't be read and no recruiting list was found,
+  // the company may publish other recruiting domains we couldn't see, so the
+  // answer is "mixed" rather than a strong warning.
+  if (!officialDomain) return result(6, "not_enough", "unknown_company");
+  if (input.officialUnread && !recruitingList) {
+    return result(6, "mixed", "unrelated_unread");
+  }
+  return result(6, "strong_warning", "unrelated");
 }

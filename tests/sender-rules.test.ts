@@ -217,3 +217,58 @@ describe("rule order", () => {
     expect(r.verdict).toBe("no_red_flags");
   });
 });
+
+describe("rule 6 when official pages couldn't be read", () => {
+  // Acme's fraud page lists a second recruiting domain that doesn't look
+  // like its name, so it can only be trusted if the page is read.
+  const fraudText = `# Recruiting fraud notice
+
+Scammers sometimes impersonate Acme recruiters and send fake job offers. ${"Acme makes industrial equipment. ".repeat(6)}
+
+Acme recruiters only contact candidates from acme.example or talentbridge-hiring.example.`;
+
+  it("passes a sender on the second domain when the page is read", () => {
+    const r = report(
+      withSender("recruiting@talentbridge-hiring.example", {
+        reads: acmeReads({ fraudText }),
+      }),
+    );
+    expect(r.verdict).toBe("no_red_flags");
+    expect(r.reasons[0].text).toBe(
+      "The sender's domain talentbridge-hiring.example is on the recruiting list Acme publishes on acme.example.",
+    );
+  });
+
+  it("is mixed, never a strong warning, when the page is unreadable", () => {
+    const r = report(
+      withSender("recruiting@talentbridge-hiring.example", {
+        reads: acmeReads({ fraudUnreadable: true }),
+      }),
+    );
+    expect(r.verdict).toBe("mixed");
+    expect(r.verdict).not.toBe("strong_warning");
+    expect(r.subtitle).toBe("Some pages couldn't be checked.");
+    expect(r.reasons[0].direction).toBe("caution");
+    expect(r.couldntFind).toContainEqual({
+      kind: "couldnt_check",
+      text: "Couldn't read acme.example/recruiting-fraud.",
+      url: "https://www.acme.example/recruiting-fraud",
+    });
+  });
+
+  it("is still a strong warning once a recruiting list was read elsewhere", () => {
+    const careersText = `# Careers at Acme\n\n${"Acme makes industrial equipment. ".repeat(6)}\n\nAcme recruiters only contact candidates from the @acme.example domain.`;
+    const r = report(
+      withSender("recruiting@talentbridge-hiring.example", {
+        reads: acmeReads({ fraudUnreadable: true, careersText }),
+      }),
+    );
+    expect(r.verdict).toBe("strong_warning");
+  });
+
+  it("leaves look-alikes and free email unchanged", () => {
+    const reads = acmeReads({ fraudUnreadable: true });
+    expect(report(withSender("hr@careers-acme.example", { reads })).verdict).toBe("strong_warning");
+    expect(report(withSender("acme.jobs@gmail.com", { reads })).verdict).toBe("strong_warning");
+  });
+});
