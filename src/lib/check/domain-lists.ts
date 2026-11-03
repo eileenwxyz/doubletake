@@ -67,6 +67,9 @@ export const AUTOMATED_RATING_SITES: ReadonlySet<string> = new Set([
   "scam-detector.com",
   "scamdoc.com",
   "urlvoid.com",
+  "thesentari.com",
+  "hastrust.com",
+  "gridinsoft.com",
 ]);
 
 // Company directories. A path prefix limits the match to company pages on

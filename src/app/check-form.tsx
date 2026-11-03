@@ -78,7 +78,9 @@ export default function CheckForm() {
         <label className="flex flex-col gap-1">
           Recruiter&apos;s email (optional)
           <input
-            type="email"
+            type="text"
+            inputMode="email"
+            autoComplete="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             maxLength={MAX_LENGTH}

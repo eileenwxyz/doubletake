@@ -191,6 +191,9 @@ export function buildReport(input: CheckInput): CheckResponse {
     hasWarningLanguage(`${e.title ?? ""}\n${e.text}`) &&
     !isQuestionPost(e.title, e.text);
   const warnings = evidence.filter(isWarning);
+  // Only Authority pages and Reports can change the verdict. "Other" pages
+  // that name the company still show up as Caution reasons.
+  const verdictWarnings = warnings.filter((e) => e.type !== "Other");
   const authorityWarnings = warnings.filter((e) => e.type === "Authority");
   // Warnings that name the sender's own (non-company, non-shared) domain.
   const senderRoot = input.senderDomain ? registrableDomain(input.senderDomain) : null;
@@ -244,18 +247,18 @@ export function buildReport(input: CheckInput): CheckResponse {
       subtitle = SUBTITLES.pagesUnchecked;
     } else if (!passed && sender.case !== "free_no_domain" && sender.case !== "unknown_company") {
       subtitle = SUBTITLES.notCompanyChannel;
-    } else if (passed && (warnings.length || fraudNotice)) {
+    } else if (passed && (verdictWarnings.length || fraudNotice)) {
       subtitle = SUBTITLES.scammersUsedName;
     }
   } else if (thin) {
     verdict = "not_enough";
-  } else if (warnings.length && fraudNotice) {
+  } else if (verdictWarnings.length && fraudNotice) {
     // The company itself warns that scammers use its name.
     verdict = "no_red_flags";
     subtitle = SUBTITLES.scammersUsedName;
   } else if (authorityWarnings.length) {
     verdict = "strong_warning";
-  } else if (warnings.length) {
+  } else if (verdictWarnings.length) {
     verdict = "mixed";
   } else {
     verdict = "no_red_flags";
@@ -299,7 +302,11 @@ export function buildReport(input: CheckInput): CheckResponse {
         add(0, "reassures", `The sender's domain ${d} belongs to ${o}, but ${company}'s recruiting pages couldn't be read, so this check is incomplete.`, firstOfficialUrl, "Official");
         break;
       case "lookalike":
-        add(0, "caution", `The sender's domain ${d} imitates ${company}'s official domain ${o}.`, firstOfficialUrl, "Official");
+        if (sender.imitates && sender.imitates !== o) {
+          add(0, "caution", `The sender's domain ${d} imitates ${sender.imitates}, a recruiting domain ${company} publishes.`, list?.url ?? firstOfficialUrl, "Official");
+        } else {
+          add(0, "caution", `The sender's domain ${d} imitates ${company}'s official domain ${o}.`, firstOfficialUrl, "Official");
+        }
         break;
       case "hiring_linked":
         add(0, "neutral", `${d} is ${sender.platform} hiring software, and ${company}'s own site links to ${sender.platform}.`, links.platformPage.get(sender.platform!) ?? firstOfficialUrl, "Official");

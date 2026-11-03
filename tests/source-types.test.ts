@@ -140,3 +140,35 @@ describe("directory listings", () => {
     expect(r.reasons.some((x) => x.sourceType === "Directory")).toBe(false);
   });
 });
+
+describe("automated rating sites and 'Other' pages", () => {
+  it("types the added rating sites as Automated rating", () => {
+    for (const host of ["www.thesentari.com", "hastrust.com", "gridinsoft.com"]) {
+      expect(type(`https://${host}/check/acme.example`, "Is acme.example a scam?", "Acme trust score")).toBe(
+        "Automated rating",
+      );
+    }
+  });
+
+  it("a scam-checker guide that names the company doesn't make a company-only check mixed", () => {
+    const guide = hit(
+      "https://scam-guides.example/acme-recruiter-scam-checker",
+      "How to check an Acme recruiter email for scams",
+      "Use this checker to spot fake Acme recruiters before you reply.",
+    );
+    expect(type(guide.url, guide.title, guide.text)).toBe("Other");
+
+    const r = buildReport(
+      acmeInput({
+        warningHits: [guide],
+        reads: acmeInput().reads.filter((p) => p.role !== "fraud"),
+      }),
+    ) as CheckReport;
+    expect(r.verdict).toBe("no_red_flags");
+    expect(r.subtitle).toBe("Company-only check: no recruiter email was given.");
+    // It can still appear as a Caution reason.
+    expect(r.reasons).toContainEqual(
+      expect.objectContaining({ direction: "caution", sourceType: "Other", sourceUrl: guide.url }),
+    );
+  });
+});

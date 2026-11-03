@@ -9,6 +9,7 @@ import {
   acmeReads,
   hit,
   NOW,
+  read,
   withSender,
 } from "./fixtures";
 
@@ -270,5 +271,97 @@ Acme recruiters only contact candidates from acme.example or talentbridge-hiring
     const reads = acmeReads({ fraudUnreadable: true });
     expect(report(withSender("hr@careers-acme.example", { reads })).verdict).toBe("strong_warning");
     expect(report(withSender("acme.jobs@gmail.com", { reads })).verdict).toBe("strong_warning");
+  });
+});
+
+describe("rule 3 compares against the published recruiting list too", () => {
+  // Acme Express's site is acmeexpress.example; its list adds aexp.example.
+  const hits = [
+    hit("https://www.acmeexpress.example/", "Acme Express | Freight", "Acme Express moves freight."),
+    hit("https://www.acmeexpress.example/careers", "Careers at Acme Express", "Join Acme Express."),
+    hit("https://www.acmeexpress.example/recruiting-fraud", "Recruiting fraud | Acme Express", "Fake Acme Express recruiters."),
+  ];
+  const fraudText = `# Recruiting fraud\n\nScammers impersonate Acme Express recruiters. ${"Acme Express moves freight. ".repeat(8)}\n\nAcme Express recruiters only contact candidates from acmeexpress.example or aexp.example.`;
+  const input = {
+    company: "Acme Express",
+    website: null,
+    senderAddress: "talent@aexp-careers.example",
+    senderDomain: "aexp-careers.example",
+    officialHits: hits,
+    warningHits: [],
+    reads: [
+      read("https://www.acmeexpress.example/recruiting-fraud", "fraud", fraudText),
+      read("https://www.acmeexpress.example/careers", "careers", `# Careers\n\n${"Acme Express is hiring drivers. ".repeat(8)}`),
+    ],
+    now: NOW,
+  };
+
+  it("treats aexp-careers.example as a look-alike of listed aexp.example (rule 3, not 6)", () => {
+    const result = evaluateSender({
+      senderAddress: input.senderAddress,
+      senderDomain: input.senderDomain,
+      company: "Acme Express",
+      officialDomain: "acmeexpress.example",
+      recruitingList: ["acmeexpress.example", "aexp.example"],
+      officialUnread: false,
+      linkedPlatforms: new Set(),
+    });
+    expect(result).toMatchObject({ rule: 3, outcome: "strong_warning", imitates: "aexp.example" });
+
+    const r = report(input);
+    expect(r.verdict).toBe("strong_warning");
+    expect(r.reasons[0].text).toBe(
+      "The sender's domain aexp-careers.example imitates aexp.example, a recruiting domain Acme Express publishes.",
+    );
+  });
+
+  it("still passes the listed domain itself", () => {
+    expect(
+      report({ ...input, senderAddress: "talent@aexp.example", senderDomain: "aexp.example" }).verdict,
+    ).toBe("no_red_flags");
+  });
+});
+
+describe("subdomain of the official domain not on the list", () => {
+  it("is mixed when a list exists", () => {
+    const r = report(withSender("hr@jobs.acme.example"));
+    expect(r.verdict).toBe("mixed");
+    expect(r.reasons[0].text).toBe(
+      "The sender's domain jobs.acme.example belongs to acme.example, but it is not on the recruiting list Acme publishes.",
+    );
+  });
+
+  it("passes when there is no list", () => {
+    const r = report(
+      withSender("hr@jobs.acme.example", { reads: acmeReads({ fraudText: ACME_FRAUD_TEXT_NO_LIST }) }),
+    );
+    expect(r.verdict).toBe("no_red_flags");
+  });
+});
+
+describe("the sender's domain settles an ambiguous name", () => {
+  const hits = [
+    hit("https://acmerobotics.example/", "Acme Robotics", "Acme builds robots."),
+    hit("https://acmerobotics.example/careers", "Careers | Acme", "Join Acme."),
+    hit("https://acmebakery.example/", "Acme Bakery", "Acme bakes bread."),
+    hit("https://acmebakery.example/jobs", "Jobs at Acme", "Acme is hiring bakers."),
+  ];
+  const base = { company: "Acme", website: null, officialHits: hits, warningHits: [], now: NOW };
+
+  it("asks for more detail without an email", () => {
+    expect(buildReport({ ...base, senderAddress: null, senderDomain: null, reads: [] }).status).toBe(
+      "need_more_detail",
+    );
+  });
+
+  it("uses the company the sender's domain belongs to", () => {
+    const r = report({
+      ...base,
+      senderAddress: "hr@acmebakery.example",
+      senderDomain: "acmebakery.example",
+      reads: [read("https://acmebakery.example/jobs", "careers", `# Jobs\n\n${"Acme is hiring bakers. ".repeat(12)}`)],
+    });
+    expect(r.officialDomain).toBe("acmebakery.example");
+    expect(r.verdict).toBe("no_red_flags");
   });
 });

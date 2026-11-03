@@ -68,8 +68,12 @@ export async function POST(request: Request) {
     if (typeof email !== "string") {
       return badRequest("Enter a valid email address.");
     }
-    const address = email.trim();
-    if (address.length > MAX_LENGTH) {
+    // Accepts "Name <address>" as pasted from a mail client; the display
+    // name is dropped and never stored or returned.
+    const raw = email.trim();
+    const bracketed = /<([^<>]+)>$/.exec(raw);
+    const address = (bracketed ? bracketed[1] : raw).trim();
+    if (raw.length > MAX_LENGTH) {
       return badRequest(`Email must be ${MAX_LENGTH} characters or fewer.`);
     }
     if (address !== "") {

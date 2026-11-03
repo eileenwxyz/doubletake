@@ -51,6 +51,23 @@ describe("POST /api/check", () => {
     });
   });
 
+  it("accepts an email with a display name, uppercase and extra spaces", async () => {
+    const response = await post({ company: "Acme", email: "  Jane Doe <JANE@Acme.example> " });
+    expect(response.status).toBe(200);
+    expect(runCheck).toHaveBeenCalledWith({
+      company: "Acme",
+      website: null,
+      senderAddress: "jane@acme.example",
+      senderDomain: "acme.example",
+    });
+    // The display name is never passed on.
+    expect(JSON.stringify(runCheck.mock.calls)).not.toMatch(/doe/i);
+  });
+
+  it("rejects a display name without an address", async () => {
+    expect((await post({ company: "Acme", email: "Jane Doe" })).status).toBe(400);
+  });
+
   it("returns the structured result", async () => {
     const response = await post({ company: "Acme" });
     expect(response.status).toBe(200);

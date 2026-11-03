@@ -32,6 +32,8 @@ export type SenderResult = {
   outcome: SenderOutcome;
   case: SenderCase;
   platform: string | null;
+  // For look-alikes: the official or listed domain the sender imitates.
+  imitates: string | null;
 };
 
 export type SenderInput = {
@@ -55,7 +57,8 @@ export function evaluateSender(input: SenderInput): SenderResult {
     outcome: SenderOutcome,
     kind: SenderCase,
     platform: string | null = null,
-  ): SenderResult => ({ rule, outcome, case: kind, platform });
+    imitates: string | null = null,
+  ): SenderResult => ({ rule, outcome, case: kind, platform, imitates });
 
   // 1. On the company's published recruiting list.
   if (recruitingList && listCovers(recruitingList, input.senderAddress, senderDomain)) {
@@ -69,9 +72,15 @@ export function evaluateSender(input: SenderInput): SenderResult {
     return result(2, "passes", "controlled_no_list");
   }
 
-  // 3. A near-copy of the official domain.
-  if (officialDomain && isLookalike(senderDomain, officialDomain, input.company)) {
-    return result(3, "strong_warning", "lookalike");
+  // 3. A near-copy of the official domain or of any domain on the
+  // company's published recruiting list.
+  if (officialDomain) {
+    const listed = (recruitingList ?? [])
+      .map((entry) => registrableDomain(entry.includes("@") ? entry.split("@")[1] : entry))
+      .filter((d): d is string => d !== null);
+    const targets = [...new Set([officialDomain, ...listed])];
+    const imitated = targets.find((d) => isLookalike(senderDomain, d, input.company));
+    if (imitated) return result(3, "strong_warning", "lookalike", null, imitated);
   }
 
   // 4. Hiring software.
