@@ -1,20 +1,19 @@
 import "server-only";
 
+import { normalizeUrl } from "@/lib/check/domains";
+import type { PageRead, PageRole, SearchHit } from "@/lib/check/types";
+
 // Parallel Search API: POST https://api.parallel.ai/v1/search
-// Request and response fields follow Parallel's Search API reference.
+// Parallel Extract API: POST https://api.parallel.ai/v1/extract
+// Request and response fields follow the parallel-web SDK
+// (SearchParams / ExtractParams and their responses).
 
 const SEARCH_URL = "https://api.parallel.ai/v1/search";
+const EXTRACT_URL = "https://api.parallel.ai/v1/extract";
 const EXCERPT_LENGTH = 300;
-
-export type SearchSource = "official" | "warnings";
-
-export type CheckResult = {
-  title: string;
-  url: string;
-  publishDate: string | null;
-  excerpt: string;
-  source: SearchSource;
-};
+const FULL_CONTENT_CHARS = 20_000;
+// A read with less text than this is treated as "couldn't read".
+export const MIN_READ_CHARS = 200;
 
 type ParallelSearchResponse = {
   results: Array<{
@@ -25,9 +24,26 @@ type ParallelSearchResponse = {
   }>;
 };
 
+type ParallelExtractResponse = {
+  results: Array<{
+    url: string;
+    title?: string | null;
+    publish_date?: string | null;
+    excerpts?: string[];
+    full_content?: string | null;
+  }>;
+  errors: Array<{ url: string; error_type: string; http_status_code: number | null }>;
+};
+
 // Thrown for any failed call. The message never includes the API key or
 // the upstream response body.
 export class SearchError extends Error {}
+
+function apiKey(): string {
+  const key = process.env.PARALLEL_API_KEY;
+  if (!key) throw new SearchError("Search is not configured.");
+  return key;
+}
 
 function shorten(text: string): string {
   const flat = text.replace(/\s+/g, " ").trim();
@@ -36,73 +52,97 @@ function shorten(text: string): string {
     : flat;
 }
 
-async function search(
-  objective: string,
-  queries: string[],
-  source: SearchSource,
-): Promise<CheckResult[]> {
-  const apiKey = process.env.PARALLEL_API_KEY;
-  if (!apiKey) {
-    throw new SearchError("Search is not configured.");
-  }
-
+async function post(url: string, body: unknown, label: string): Promise<unknown> {
   let response: Response;
   try {
-    response = await fetch(SEARCH_URL, {
+    response = await fetch(url, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-      },
-      body: JSON.stringify({
-        objective,
-        search_queries: queries,
-        mode: "advanced",
-        advanced_settings: { max_results: 10 },
-      }),
+      headers: { "Content-Type": "application/json", "x-api-key": apiKey() },
+      body: JSON.stringify(body),
       signal: AbortSignal.timeout(30_000),
     });
-  } catch {
-    throw new SearchError(`The ${source} search could not be reached.`);
+  } catch (error) {
+    if (error instanceof SearchError) throw error;
+    throw new SearchError(`The ${label} could not be reached.`);
   }
-
   if (!response.ok) {
-    throw new SearchError(
-      `The ${source} search failed with status ${response.status}.`,
-    );
+    throw new SearchError(`The ${label} failed with status ${response.status}.`);
   }
+  return response.json();
+}
 
-  const data = (await response.json()) as ParallelSearchResponse;
+export function toSearchHits(data: ParallelSearchResponse): SearchHit[] {
   return (data.results ?? []).map((result) => ({
-    title: result.title || result.url,
     url: result.url,
+    title: result.title || null,
     publishDate: result.publish_date ?? null,
-    excerpt: shorten(result.excerpts?.join(" ") ?? ""),
-    source,
+    text: shorten(result.excerpts?.join(" ") ?? ""),
   }));
 }
 
-export async function checkCompany(
-  company: string,
-  emailDomain: string | null,
-): Promise<CheckResult[]> {
-  const warningQueries = [`${company} recruitment fraud`];
-  if (emailDomain) {
-    warningQueries.push(emailDomain);
+export async function search(objective: string, queries: string[]): Promise<SearchHit[]> {
+  const data = (await post(
+    SEARCH_URL,
+    {
+      objective,
+      search_queries: queries,
+      mode: "advanced",
+      advanced_settings: { max_results: 10 },
+    },
+    "search",
+  )) as ParallelSearchResponse;
+  return toSearchHits(data);
+}
+
+// Maps an Extract response onto the pages that were asked for. Errors,
+// missing pages and empty or near-empty text all become ok: false.
+export function toPageReads(
+  pages: ReadonlyArray<{ url: string; role: PageRole }>,
+  data: ParallelExtractResponse | null,
+): PageRead[] {
+  return pages.map(({ url, role }) => {
+    const result = data?.results?.find((r) => normalizeUrl(r.url) === normalizeUrl(url));
+    const text = result?.full_content?.trim() ?? "";
+    const ok = text.length >= MIN_READ_CHARS;
+    return {
+      url,
+      role,
+      ok,
+      title: result?.title || null,
+      publishDate: result?.publish_date ?? null,
+      text: ok ? text : "",
+    };
+  });
+}
+
+// Reads full page text. maxAgeSeconds sets how old cached content may be
+// before Parallel fetches the page live (minimum 600 seconds). A failed call
+// is reported as unreadable pages rather than thrown.
+export async function extract(
+  pages: ReadonlyArray<{ url: string; role: PageRole }>,
+  maxAgeSeconds: number,
+  objective: string,
+): Promise<PageRead[]> {
+  if (pages.length === 0) return [];
+  let data: ParallelExtractResponse | null = null;
+  try {
+    data = (await post(
+      EXTRACT_URL,
+      {
+        urls: pages.map((p) => p.url),
+        objective,
+        advanced_settings: {
+          full_content: { max_chars_per_result: FULL_CONTENT_CHARS },
+          fetch_policy: { max_age_seconds: maxAgeSeconds },
+        },
+      },
+      "page read",
+    )) as ParallelExtractResponse;
+  } catch (error) {
+    if (error instanceof SearchError && error.message === "Search is not configured.") {
+      throw error;
+    }
+    data = null;
   }
-
-  const [official, warnings] = await Promise.all([
-    search(
-      "Find the company's official website, careers page, and any page where the company says which email addresses its recruiters use",
-      [`${company} official website careers`],
-      "official",
-    ),
-    search(
-      "find job scams or warnings about this company or this website",
-      warningQueries,
-      "warnings",
-    ),
-  ]);
-
-  return [...official, ...warnings];
+  return toPageReads(pages, data);
 }
