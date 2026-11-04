@@ -21,7 +21,33 @@ export type SourceContext = {
   linkedBoards: ReadonlySet<string>;
   // Registrable domains the official pages link to.
   linkedDomains: ReadonlySet<string>;
+  // The sender's registrable domain, when a recruiter email was given.
+  senderDomain?: string | null;
 };
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// A rating site's page about one of the checked domains, such as
+// scamadviser.com/check-website/acme.example. The domain may be written with
+// dashes for dots (acme-example). Any other page on a rating site (articles,
+// lists, pages about other sites) is general advice.
+export function isRatingPageFor(url: string, domains: ReadonlyArray<string | null | undefined>): boolean {
+  let where: string;
+  try {
+    const parsed = new URL(url);
+    where = decodeURIComponent(`${parsed.pathname}${parsed.search}`).toLowerCase();
+  } catch {
+    return false;
+  }
+  return domains.some((domain) => {
+    if (!domain) return false;
+    return [domain, domain.replace(/\./g, "-")].some((form) =>
+      new RegExp(`(?<![a-z0-9-])${escapeRegExp(form)}(?![a-z0-9]|\\.[a-z0-9])`).test(where),
+    );
+  });
+}
 
 function isPortfolioPage(url: string): boolean {
   try {
@@ -62,7 +88,11 @@ export function classifySource(
     (isPortfolioPage(url) && ctx.linkedDomains.has(domain));
   if (authority && names) return "Authority";
 
-  if (AUTOMATED_RATING_SITES.has(domain)) return "Automated rating";
+  if (AUTOMATED_RATING_SITES.has(domain)) {
+    return isRatingPageFor(url, [ctx.officialDomain, ctx.senderDomain])
+      ? "Automated rating"
+      : "General advice";
+  }
   if (isDirectory(url)) return "Directory";
   if (ADVICE_SITES.has(domain)) return "General advice";
 

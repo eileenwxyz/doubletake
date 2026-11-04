@@ -10,7 +10,7 @@ export const TAGLINE = "Check who's really hiring.";
 
 // ---- Form ----
 export const FORM = {
-  companyLabel: "Company",
+  companyLabel: "Company, website or job link",
   emailLabel: "Recruiter's email (optional)",
   submit: "Check",
   submitting: "Checking…",
@@ -63,6 +63,9 @@ export const SUBTITLES = {
 export const NEED_MORE_DETAIL_MESSAGE =
   "Several companies use this name. Add their website or the recruiter's email.";
 
+export const LINKEDIN_UNREADABLE_MESSAGE =
+  "We couldn't read that LinkedIn job posting. Enter the company's name and the job title instead.";
+
 // ---- Errors and limits ----
 export const GENERIC_ERROR = "Something went wrong. Try again.";
 export const VISITOR_LIMIT_ERROR = "You've used today's checks. Try again tomorrow.";
@@ -77,6 +80,10 @@ export const INPUT_ERRORS = {
   badWebsite: "Enter a valid website.",
   badEmail: "Enter a valid email address.",
   emailTooLong: (max: number) => `Email must be ${max} characters or fewer.`,
+  linkTooLong: (max: number) => `Links must be ${max} characters or fewer.`,
+  notAJobLink:
+    "That link isn't a job posting we can read. Paste the job posting's link, or enter the company name.",
+  badJobTitle: (max: number) => `Job title must be ${max} characters or fewer.`,
 } as const;
 
 // ---- Ages ----
@@ -136,6 +143,18 @@ export const REASONS = {
     `${company} has a company listing on ${host}.`,
   automatedRating: (host: string) =>
     `${host} has an automated rating page; automated scores are not a verdict.`,
+  // ---- Job checks ----
+  jobListed: (title: string, company: string, host: string) =>
+    `“${title}” is listed on ${host}, ${company}'s own job listings.`,
+  jobNotListed: (title: string, company: string, host: string) =>
+    `“${title}” isn't listed on ${company}'s own job listings on ${host}. It may be filled, stale or copied.`,
+  jobClosed: (host: string) => `This role has closed: ${host} says the job is no longer available.`,
+  linkedinPosting: (company: string, posted: string | null) =>
+    `The job is posted on LinkedIn under ${company}${posted ? `, ${posted}` : ""}. LinkedIn doesn't verify job postings, so this alone doesn't show the job is real.`,
+  boardLinked: (host: string, company: string, platform: string) =>
+    `The posting is on ${host}, the ${platform} job board ${company}'s own site links to.`,
+  boardUnlinked: (company: string, platform: string) =>
+    `The posting is on ${platform}, but ${company}'s own site doesn't link to this job board.`,
 } as const;
 
 // ---- Couldn't find ----
@@ -146,6 +165,8 @@ export const COULDNT_FIND = {
     `${company} doesn't say which email domains its recruiters use on the pages checked.`,
   noFraudNotice: (company: string) =>
     `${company} doesn't publish a recruiting fraud notice on the pages checked.`,
+  noJobListings: (company: string) =>
+    `Couldn't read ${company}'s own careers page or job board to look for this job.`,
 } as const;
 
 // ---- Result page ----

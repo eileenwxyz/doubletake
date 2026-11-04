@@ -30,7 +30,7 @@ export type OfficialDomain =
   | { status: "none" };
 
 // Domains that can't be a company's own site.
-function isThirdParty(domain: string): boolean {
+export function isThirdParty(domain: string): boolean {
   return (
     SHARED_SITES.has(domain) ||
     isReportDomain(domain) ||
@@ -57,6 +57,10 @@ function labelMatchesName(domain: string, company: string): boolean {
 // - Otherwise, count official-search results per registrable domain, keeping
 //   only results whose title or excerpt names the company and skipping
 //   third-party sites. Domains whose name matches the company's are preferred.
+// - Two or more domains whose name matches the company's (premise.example,
+//   premisehealth.example, premise-one.example) mean namesakes: the answer
+//   is "ambiguous" however the counts compare, unless the sender's domain is
+//   one of them.
 // - The leader must have at least twice as many naming results as the
 //   runner-up when the runner-up has two or more; otherwise the results point
 //   to more than one company and the answer is "ambiguous". If the sender's
@@ -83,6 +87,13 @@ export function findOfficialDomain(
 
   const all = [...counts.entries()].sort((a, b) => b[1] - a[1]);
   const named = all.filter(([domain]) => labelMatchesName(domain, company));
+  const senderRoot = senderDomain ? registrableDomain(senderDomain) : null;
+  if (named.length >= 2) {
+    if (senderRoot && named.some(([d]) => d === senderRoot)) {
+      return { status: "found", domain: senderRoot, from: "email" };
+    }
+    return { status: "ambiguous" };
+  }
   const pool = named.length ? named : all.filter(([, n]) => n >= 2);
   if (pool.length === 0) return { status: "none" };
 
@@ -92,7 +103,6 @@ export function findOfficialDomain(
     (runnerUp[1] === leader[1] || (runnerUp[1] >= 2 && leader[1] < 2 * runnerUp[1]));
   if (!contested) return { status: "found", domain: leader[0], from: "search" };
 
-  const senderRoot = senderDomain ? registrableDomain(senderDomain) : null;
   const competing = pool.filter(([, n]) => n * 2 > leader[1]).map(([d]) => d);
   if (senderRoot && competing.includes(senderRoot)) {
     return { status: "found", domain: senderRoot, from: "email" };

@@ -80,7 +80,13 @@ export function toSearchHits(data: ParallelSearchResponse): SearchHit[] {
   }));
 }
 
-export async function search(objective: string, queries: string[]): Promise<SearchHit[]> {
+// includeDomains limits results to those domains and their subdomains
+// (Parallel's source_policy.include_domains).
+export async function search(
+  objective: string,
+  queries: string[],
+  options: { includeDomains?: string[] } = {},
+): Promise<SearchHit[]> {
   const data = (await post(
     SEARCH_URL,
     {
@@ -88,6 +94,9 @@ export async function search(objective: string, queries: string[]): Promise<Sear
       search_queries: queries,
       mode: "advanced",
       advanced_settings: { max_results: 10 },
+      ...(options.includeDomains?.length
+        ? { source_policy: { include_domains: options.includeDomains } }
+        : {}),
     },
     "search",
   )) as ParallelSearchResponse;

@@ -123,11 +123,17 @@ export function isPersonalUrl(url: string): boolean {
 
 // Identifies one company's board on a shared hiring platform:
 // jobs.lever.co/acme and jobs.lever.co/acme/123 share "jobs.lever.co/acme".
+// Greenhouse's two board hosts and its embed links
+// (boards.greenhouse.io/embed/job_app?for=acme) share one key.
 export function boardKey(url: string): string | null {
   try {
     const parsed = new URL(url);
-    const first = parsed.pathname.split("/").filter(Boolean)[0] ?? "";
-    return `${parsed.hostname.toLowerCase()}/${first.toLowerCase()}`;
+    const host = parsed.hostname.toLowerCase().replace(/^job-boards\.(?=(eu\.)?greenhouse\.io$)/, "boards.");
+    let first = parsed.pathname.split("/").filter(Boolean)[0] ?? "";
+    if (host.endsWith("greenhouse.io") && first.toLowerCase() === "embed") {
+      first = parsed.searchParams.get("for") ?? "";
+    }
+    return `${host}/${first.toLowerCase()}`;
   } catch {
     return null;
   }

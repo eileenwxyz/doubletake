@@ -157,3 +157,19 @@ export const DEFAULT_LOCALE = "en-us";
 // Reserved test suffixes (RFC 2606) that tldts treats as unknown but that we
 // accept as real domains, so fixtures can use .example.
 export const RESERVED_TEST_SUFFIXES: ReadonlySet<string> = new Set(["example", "test"]);
+
+// Job boards whose posting links Doubletake accepts in the company field.
+// hosts are full host names; the company's slug is the first path segment
+// unless the platform's own rules (in job-link.ts) say otherwise.
+export const JOB_BOARD_HOSTS: ReadonlyArray<{ platform: string; hosts: readonly string[] }> = [
+  { platform: "Ashby", hosts: ["jobs.ashbyhq.com"] },
+  {
+    platform: "Greenhouse",
+    hosts: ["boards.greenhouse.io", "job-boards.greenhouse.io", "boards.eu.greenhouse.io", "job-boards.eu.greenhouse.io"],
+  },
+  { platform: "Lever", hosts: ["jobs.lever.co", "jobs.eu.lever.co"] },
+  { platform: "Workable", hosts: ["apply.workable.com"] },
+];
+
+// LinkedIn: job postings are rebuilt as https://www.linkedin.com/jobs/view/<id>.
+export const LINKEDIN_DOMAIN = "linkedin.com";

@@ -231,8 +231,40 @@ describe("bbb.org", () => {
   });
 });
 
+describe("rating sites: only a page about the checked domain is an automated rating", () => {
+  it("types other pages on rating sites as general advice", () => {
+    expect(type("https://www.scamadviser.com/check-website/acme.example", "acme.example", "Trust score")).toBe("Automated rating");
+    expect(type("https://www.scamadviser.com/check-website/www.acme.example", "acme.example", "Trust score")).toBe("Automated rating");
+    expect(type("https://www.scam-detector.com/validator/acme-example-review/", "acme.example review", "Score")).toBe("Automated rating");
+    expect(type("https://www.scamadviser.com/check-website/globex.example", "globex.example", "Trust score")).toBe("General advice");
+    expect(type("https://www.scamadviser.com/check-website/acme.example.scam.example", "x", "Trust score")).toBe("General advice");
+    expect(type("https://www.scamadviser.com/articles/acme-recruiter-scams", "Acme recruiter scams", "Acme fraud")).toBe("General advice");
+  });
+
+  it("a scamadviser.com article doesn't appear as a reason", () => {
+    const article = hit(
+      "https://www.scamadviser.com/articles/fake-acme-recruiters",
+      "Fake Acme recruiters: how the scam works",
+      "Scammers impersonate Acme recruiters and send fake offers.",
+    );
+    const r = buildReport(acmeInput({ warningHits: [article] })) as CheckReport;
+    expect(r.sources.find((s) => s.url === article.url)?.type).toBe("General advice");
+    expect(r.reasons.some((x) => x.sourceUrl === article.url)).toBe(false);
+    expect(r.verdict).toBe("no_red_flags");
+  });
+
+  it("a rating page about the sender's domain counts", () => {
+    const rating = hit("https://www.scamadviser.com/check-website/acme-careers.example", "acme-careers.example", "Low trust score");
+    expect(
+      classifySource(rating.url, rating.title, rating.text, { ...ctx, senderDomain: "acme-careers.example" }),
+    ).toBe("Automated rating");
+  });
+});
+
 describe("jobscamscore.com", () => {
   it("is an automated rating site", () => {
-    expect(type("https://jobscamscore.com/company/acme", "Acme job scam score", "Acme score: 82")).toBe("Automated rating");
+    expect(type("https://jobscamscore.com/company/acme.example", "Acme job scam score", "Acme score: 82")).toBe("Automated rating");
+    // A page that isn't about the checked domain is general advice.
+    expect(type("https://jobscamscore.com/company/acme", "Acme job scam score", "Acme score: 82")).toBe("General advice");
   });
 });

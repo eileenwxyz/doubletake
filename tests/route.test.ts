@@ -52,6 +52,8 @@ describe("POST /api/check", () => {
       senderAddress: "hr@acme.example",
       senderDomain: "acme.example",
       locale: "en-us",
+      jobLink: null,
+      jobTitle: null,
     });
   });
 
@@ -64,6 +66,8 @@ describe("POST /api/check", () => {
       senderAddress: "jane@acme.example",
       senderDomain: "acme.example",
       locale: "en-us",
+      jobLink: null,
+      jobTitle: null,
     });
     // The display name is never passed on.
     expect(JSON.stringify(runCheck.mock.calls)).not.toMatch(/doe/i);
@@ -123,6 +127,43 @@ describe("POST /api/check", () => {
 
   it("doesn't count a check that fails validation", async () => {
     await post({ company: "" });
+    expect(takeCheck).not.toHaveBeenCalled();
+  });
+
+  it("passes on only the clean LinkedIn job link, never the search terms in a pasted link", async () => {
+    const messy =
+      "https://www.linkedin.com/jobs/search/?currentJobId=4012345678&keywords=night%20shift%20welder" +
+      "&location=Shelbyville%2C%20Ohio&geoId=90000123&origin=JOBS_HOME_SEARCH_BUTTON&refresh=true";
+    const response = await post({ company: messy });
+    expect(response.status).toBe(200);
+    expect(runCheck).toHaveBeenCalledWith({
+      company: null,
+      website: null,
+      senderAddress: null,
+      senderDomain: null,
+      locale: "en-us",
+      jobLink: { kind: "linkedin", jobId: "4012345678", url: "https://www.linkedin.com/jobs/view/4012345678" },
+      jobTitle: null,
+    });
+    expect(JSON.stringify(runCheck.mock.calls)).not.toMatch(/welder|shelbyville|keywords|geoId/i);
+  });
+
+  it("accepts a job board link and a typed job title", async () => {
+    await post({ company: "https://jobs.lever.co/acme/1a2b3c4d-aaaa-bbbb-cccc-1234567890ab?lever-source=x" });
+    expect(runCheck.mock.calls[0][0]).toMatchObject({
+      company: null,
+      website: null,
+      jobLink: { kind: "board", platform: "Lever", url: "https://jobs.lever.co/acme/1a2b3c4d-aaaa-bbbb-cccc-1234567890ab" },
+    });
+    await post({ company: "Acme", jobTitle: "  Senior   Anvil Engineer " });
+    expect(runCheck.mock.calls[1][0]).toMatchObject({ company: "Acme", jobLink: null, jobTitle: "Senior Anvil Engineer" });
+  });
+
+  it("rejects a LinkedIn or job board link that isn't a posting", async () => {
+    for (const company of ["https://www.linkedin.com/company/acme-example", "jobs.lever.co/acme"]) {
+      const response = await post({ company });
+      expect(response.status).toBe(400);
+    }
     expect(takeCheck).not.toHaveBeenCalled();
   });
 

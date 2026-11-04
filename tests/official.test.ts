@@ -149,7 +149,8 @@ describe("finding the official domain", () => {
 
   it("uses the domain most official results share, not the top result", () => {
     const hits = [
-      hit("https://acme-careers.example/apply", "Acme careers - apply now", "Acme jobs"),
+      // The top result is on a domain whose name isn't the company's.
+      hit("https://jobs-portal.example/acme/apply", "Acme careers - apply now", "Acme jobs"),
       ...ACME_OFFICIAL_HITS,
     ];
     expect(findOfficialDomain("Acme", null, hits)).toMatchObject({
@@ -195,6 +196,49 @@ describe("finding the official domain", () => {
       status: "found",
       domain: "acmebakery.example",
     });
+  });
+});
+
+describe("namesakes", () => {
+  // One dominant domain and two smaller namesakes.
+  const hits = [
+    hit("https://www.premise.example/", "Premise | Field data", "Premise collects field data."),
+    hit("https://www.premise.example/careers", "Careers at Premise", "Join Premise."),
+    hit("https://www.premise.example/about", "About Premise", "Premise was founded long ago."),
+    hit("https://www.premise.example/security", "Recruiting fraud | Premise", "Premise recruiters only use premise.example."),
+    hit("https://www.premise.example/blog", "Premise blog", "News from Premise."),
+    hit("https://premisehealth.example/", "Premise Health", "Premise Health runs clinics."),
+    hit("https://premise-one.example/", "Premise One", "Premise One builds homes."),
+  ];
+
+  it("asks for more detail however the counts compare", () => {
+    expect(findOfficialDomain("Premise", null, hits)).toEqual({ status: "ambiguous" });
+    expect(
+      buildReport({
+        company: "Premise",
+        website: null,
+        senderAddress: null,
+        senderDomain: null,
+        officialHits: hits,
+        warningHits: [],
+        reads: [],
+        now: NOW,
+      }),
+    ).toMatchObject({ status: "need_more_detail" });
+  });
+
+  it("lets a website or recruiter email the user gave decide", () => {
+    expect(findOfficialDomain("Premise", "premisehealth.example", hits)).toMatchObject({
+      status: "found",
+      domain: "premisehealth.example",
+    });
+    expect(findOfficialDomain("Premise", null, hits, "talent.premise.example")).toMatchObject({
+      status: "found",
+      domain: "premise.example",
+      from: "email",
+    });
+    // An email on another domain doesn't settle it.
+    expect(findOfficialDomain("Premise", null, hits, "gmail.com")).toEqual({ status: "ambiguous" });
   });
 });
 
