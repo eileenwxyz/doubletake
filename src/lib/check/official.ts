@@ -7,6 +7,7 @@ import {
 } from "./domain-lists";
 import {
   compactName,
+  coreName,
   dedupeByUrl,
   domainLabel,
   hiringPlatform,
@@ -48,7 +49,7 @@ export function isThirdParty(domain: string): boolean {
 
 function labelMatchesName(domain: string, company: string): boolean {
   const label = (domainLabel(domain) ?? "").replace(/-/g, "");
-  const name = compactName(company);
+  const name = compactName(coreName(company));
   if (label.length < 2 || name.length < 2) return false;
   return label.includes(name) || name.includes(label);
 }
@@ -57,7 +58,8 @@ function labelMatchesName(domain: string, company: string): boolean {
 //
 // - A website the user entered always wins.
 // - Otherwise, count official-search results per registrable domain, keeping
-//   only results whose title or excerpt names the company and skipping
+//   only results whose title or excerpt names the company (its core name,
+//   without suffixes such as Group or Inc; see coreName) and skipping
 //   third-party sites. Domains whose name matches the company's are preferred.
 // - Two or more domains whose name matches the company's (premise.example,
 //   premisehealth.example, premise-one.example) mean namesakes: the answer
@@ -83,7 +85,8 @@ export function findOfficialDomain(
   for (const hit of dedupeByUrl(hits)) {
     const domain = registrableDomain(hit.url);
     if (!domain || isThirdParty(domain)) continue;
-    if (!namesCompanyLoosely(`${hit.title ?? ""}\n${hit.text}`, company)) continue;
+    // The company's own pages may leave off "Group", "Inc" and the like.
+    if (!namesCompanyLoosely(`${hit.title ?? ""}\n${hit.text}`, coreName(company))) continue;
     counts.set(domain, (counts.get(domain) ?? 0) + 1);
   }
 

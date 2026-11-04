@@ -6,6 +6,7 @@ import { GOV_JOB_ID_PARAMS, JOB_BOARD_HOSTS, LINKEDIN_DOMAIN } from "./domain-li
 import {
   boardKey,
   compactName,
+  coreName,
   domainLabel,
   hiringPlatform,
   hostOf,
@@ -392,7 +393,7 @@ export function parseAggregatorPosting(
   const title = plausibleName(TITLE_LABEL.exec(body)?.[1]) ?? heading ?? null;
 
   // The employer's own site: a link whose domain name matches the employer.
-  const target = compactName(employer);
+  const target = compactName(coreName(employer));
   let site: string | null = null;
   let careersUrl: string | null = null;
   for (const href of linksIn(body)) {

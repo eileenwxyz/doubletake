@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  coreName,
   dedupeByUrl,
   isLookalike,
   normalizeUrl,
@@ -196,6 +197,31 @@ describe("finding the official domain", () => {
       status: "found",
       domain: "acmebakery.example",
     });
+  });
+});
+
+describe("core company name", () => {
+  it.each([
+    ["Northwind Group", "Northwind"],
+    ["Northwind Group, Inc.", "Northwind"],
+    ["Fabrikam Holdings International", "Fabrikam"],
+    ["Contoso Solutions LLC", "Contoso"],
+    ["Acme Co.", "Acme"],
+    ["Acme Robotics", "Acme Robotics"],
+    // Never the whole name, and never down to just an article.
+    ["Solutions", "Solutions"],
+    ["Group Inc", "Group"],
+    ["The Group", "The Group"],
+  ])("%s -> %s", (name, core) => {
+    expect(coreName(name)).toBe(core);
+  });
+
+  it("finds the official domain from pages that leave off the suffix", () => {
+    const hits = [
+      hit("https://www.northwind.example/", "Northwind | Logistics software", "Northwind designs logistics software."),
+      hit("https://careers.northwind.example/", "Careers at Northwind", "Open roles at Northwind."),
+    ];
+    expect(findOfficialDomain("Northwind Group", null, hits)).toMatchObject({ status: "found", domain: "northwind.example" });
   });
 });
 

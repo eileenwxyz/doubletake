@@ -260,6 +260,24 @@ export function stripCorporateSuffix(name: string): string {
     .trim();
 }
 
+// Words a company's own pages often leave off its name: "Northwind Group"
+// calls itself "Northwind" on its site.
+const COMMON_SUFFIX =
+  /[\s,]+(group|inc|incorporated|llc|ltd|limited|corp|corporation|co|company|holdings|international|solutions|gmbh|plc)\.?$/i;
+
+// The company's name without common suffixes, for matching it against its
+// own pages: "Northwind Group, Inc." -> "Northwind". A suffix word is never
+// stripped when it is the whole name ("Solutions" stays "Solutions"), and
+// stripping stops before leaving only an article ("The Group" stays).
+export function coreName(name: string): string {
+  let current = name.trim().replace(/\s+/g, " ");
+  for (;;) {
+    const next = current.replace(COMMON_SUFFIX, "").trim();
+    if (next === current || next.length < 2 || /^(the|a|an)$/i.test(next)) return current;
+    current = next;
+  }
+}
+
 // A near-copy of an official domain: one character off, the official name
 // plus extra words or hyphens, the same name on another suffix (including
 // private suffixes such as vercel.app), or the official domain placed at the

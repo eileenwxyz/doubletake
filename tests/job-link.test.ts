@@ -644,3 +644,40 @@ Apply on the employer's site: ${CAREERS}?src=azjc
     ).toMatchObject({ employer: "Northwind Group", title: "Product Designer", site: null });
   });
 });
+
+// ---- Matching the employer's name against its own pages ----
+
+describe("an employer whose own pages leave off the suffix", () => {
+  const LINK = "https://www.azjobconnection.gov/jobs/jobdetails?jobid=55500011";
+  const CAREERS = "https://careers.northwind.example/jobs/product-designer";
+  const FILLER_NW =
+    "Northwind designs software for logistics companies across the Southwest. " +
+    "We list every open role on our careers site and we never ask candidates to pay for anything.";
+
+  it("matches pages that say only Northwind for the employer Northwind Group", async () => {
+    pages = {
+      [LINK]: {
+        title: "Product Designer | Arizona Job Connection",
+        text: `# Product Designer\n\n**Employer:** Northwind Group\n\nNorthwind Group is hiring a Product Designer. ${FILLER_NW}\n\nApply: ${CAREERS}`,
+      },
+      [CAREERS]: { text: `# Product Designer\n\n${FILLER_NW}\n\nApply now.` },
+      "https://careers.northwind.example/": { text: `# Careers at Northwind\n\n${FILLER_NW}\n\n- Product Designer` },
+      "https://www.northwind.example/": { text: `# Northwind\n\n${FILLER_NW}` },
+    };
+    searchResults = (call) =>
+      call.options?.includeDomains?.includes("northwind.example")
+        ? [
+            hit("https://www.northwind.example/", "Northwind | Logistics software", "Northwind designs logistics software."),
+            hit("https://careers.northwind.example/", "Careers at Northwind", "Open roles at Northwind."),
+          ]
+        : [];
+
+    const r = (await runCheck(req(null, parseJobLink(LINK)))) as CheckReport;
+    expect(r.status).toBe("ok");
+    expect(r.officialDomain).toBe("northwind.example");
+    // The employer's own name from the posting is kept for display.
+    expect(r.companyName).toBe("Northwind Group");
+    expect(r.job).toMatchObject({ site: "azjobconnection.gov", careers: "listed", careersUrl: CAREERS });
+    expect(r.verdict).not.toBe("not_enough");
+  });
+});
