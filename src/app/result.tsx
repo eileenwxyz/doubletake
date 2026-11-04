@@ -163,7 +163,14 @@ export default function Result({
                 </h3>
                 <ul className="reasons">
                   {group.reasons.map((reason, index) => (
-                    <ReasonItem key={index} reason={reason} />
+                    <ReasonItem
+                      key={index}
+                      reason={reason}
+                      maxLinks={MAX_REASON_LINKS}
+                      onShowAll={
+                        allGroups.length ? () => showAllReasons(group.direction) : undefined
+                      }
+                    />
                   ))}
                 </ul>
                 {more > 0 && (
@@ -289,13 +296,29 @@ export default function Result({
   );
 }
 
+// Under Top reasons, a merged reason shows this many source links, then
+// "and N more", which opens "See all sources" where every link is listed.
+const MAX_REASON_LINKS = 3;
+
 // One reason: its sentence, then the type, age and link of each source it
-// cites (a merged reason cites several).
-function ReasonItem({ reason }: { reason: Reason }) {
-  const sources = [
+// cites (a merged reason cites several). With maxLinks and onShowAll, links
+// past maxLinks are replaced by an "and N more" button.
+function ReasonItem({
+  reason,
+  maxLinks,
+  onShowAll,
+}: {
+  reason: Reason;
+  maxLinks?: number;
+  onShowAll?: () => void;
+}) {
+  const all = [
     { url: reason.sourceUrl, sourceType: reason.sourceType, age: reason.age },
     ...(reason.alsoFrom ?? []),
   ];
+  const cap = maxLinks !== undefined && onShowAll && all.length > maxLinks ? maxLinks : all.length;
+  const sources = all.slice(0, cap);
+  const hidden = all.length - cap;
   return (
     <li className={`reason reason--${reason.direction}`}>
       <p className="reason-text">
@@ -316,6 +339,13 @@ function ReasonItem({ reason }: { reason: Reason }) {
           )}
         </p>
       ))}
+      {hidden > 0 && (
+        <p className="reason-meta">
+          <button type="button" className="text-button" onClick={onShowAll}>
+            {RESULT.moreLinks(hidden)}
+          </button>
+        </p>
+      )}
     </li>
   );
 }

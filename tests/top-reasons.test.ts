@@ -245,3 +245,31 @@ describe("top reasons on the page", () => {
     expect(text(allSources(html))).toContain("Acme has a company listing on glassdoor.com.");
   });
 });
+
+describe("links on a merged reason", () => {
+  const urls = [1, 2, 3, 4, 5].map((n) => `https://forum${n}.example/post`);
+  const merged: Reason = {
+    ...reason("caution", "Posts on five forums report a problem involving Acme by name.", urls[0]),
+    alsoFrom: urls.slice(1).map((url) => ({ url, sourceType: "Report", age: "Date unknown" })),
+  };
+
+  it("shows at most 3 links under Top reasons, then 'and N more', and every link in See all sources", () => {
+    const html = render(withReasons("mixed", [merged], { allReasons: [merged] }));
+    const top = topReasons(html);
+    for (const url of urls.slice(0, 3)) expect(top).toContain(`href="${url}"`);
+    for (const url of urls.slice(3)) expect(top).not.toContain(`href="${url}"`);
+    expect(text(top)).toContain("and 2 more");
+    expect(top).toMatch(/<button[^>]*>and 2 more<\/button>/);
+
+    const all = allSources(html);
+    const reasonsPart = all.slice(0, all.indexOf("Every source"));
+    for (const url of urls) expect(reasonsPart).toContain(`href="${url}"`);
+    expect(text(all)).not.toContain("and 2 more");
+  });
+
+  it("shows every link when there are 3 or fewer", () => {
+    const three: Reason = { ...merged, alsoFrom: merged.alsoFrom!.slice(0, 2) };
+    const top = topReasons(render(withReasons("mixed", [three], { allReasons: [three] })));
+    expect(text(top)).not.toContain("more");
+  });
+});

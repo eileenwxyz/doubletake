@@ -187,6 +187,8 @@ export const COULDNT_FIND = {
   noOfficialSite: (company: string) => `No official website for ${company} was found.`,
   noRecruitingList: (company: string) =>
     `${company} doesn't say which email domains its recruiters use on the pages checked.`,
+  recruitingListNotFound:
+    "We couldn't find a list of recruiting email domains on the pages we read.",
   noFraudNotice: (company: string) =>
     `${company} doesn't publish a recruiting fraud notice on the pages checked.`,
   clientNotNamed: (agency: string) =>
@@ -212,6 +214,8 @@ export const RESULT = {
   topReasons: "Top reasons",
   // Ends a group of top reasons when equally strong ones were left out;
   // opens "See all sources" at that group.
+  // Ends a merged reason's links after the first 3; opens "See all sources".
+  moreLinks: (n: number) => `and ${n} more`,
   moreReasons: (n: number) => `+${n} more reason${n === 1 ? "" : "s"}`,
   sourcesCount: (shown: number, total: number) =>
     `${shown} of ${total} source${total === 1 ? "" : "s"}`,

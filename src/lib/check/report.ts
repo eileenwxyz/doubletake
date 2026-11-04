@@ -17,7 +17,7 @@ import {
 } from "./domains";
 import { checkCareers } from "./job-link";
 import { chooseTopReasons } from "./reasons";
-import { findOfficialDomain, officialPageRole } from "./official";
+import { byFraudScore, findOfficialDomain, fraudPageScore, officialPageRole } from "./official";
 import { evaluateSender, type SenderResult } from "./sender";
 import { classifySource, type SourceContext } from "./sources";
 import {
@@ -179,7 +179,7 @@ export function buildReport(input: CheckInput): CheckResponse {
 
   // The company's published recruiting list, from full page text only.
   let list: (RecruitingList & { url: string }) | null = null;
-  for (const read of readOk) {
+  for (const read of byFraudScore(readOk)) {
     const found = findRecruitingList(read.text);
     if (!found) continue;
     if (!list) {
@@ -192,7 +192,8 @@ export function buildReport(input: CheckInput): CheckResponse {
       }
     }
   }
-  const fraudNotice = readOk.find(
+  // A page whose path or title says fraud or scam before a contact page.
+  const fraudNotice = byFraudScore(readOk).find(
     (r) => hasImpersonationNotice(r.text) || (r.role === "fraud" && hasWarningLanguage(r.text)),
   );
 
@@ -617,11 +618,17 @@ export function buildReport(input: CheckInput): CheckResponse {
     });
   } else if (readOk.length) {
     if (!list) {
-      couldntFind.push({
-        kind: "not_published",
-        text: COULDNT_FIND.noRecruitingList(name),
-        url: null,
-      });
+      // "Not published" only when a recruiting fraud or careers page was
+      // actually read; otherwise the list may be on a page we didn't read.
+      // A contact page doesn't count as a notice page.
+      const readNotice = readOk.some(
+        (r) => (r.role === "fraud" || r.role === "careers") && fraudPageScore(r.url, r.title) > 0,
+      );
+      couldntFind.push(
+        readNotice
+          ? { kind: "not_published", text: COULDNT_FIND.noRecruitingList(name), url: null }
+          : { kind: "couldnt_check", text: COULDNT_FIND.recruitingListNotFound, url: null },
+      );
     }
     if (!fraudNotice && (input.senderDomain || warnings.length)) {
       couldntFind.push({
@@ -646,9 +653,9 @@ export function buildReport(input: CheckInput): CheckResponse {
       (h) => registrableDomain(h.url) === officialDomain,
     );
     const pageFor = (role: "fraud" | "careers") =>
-      readOk.find((r) => r.role === role)?.url ??
-      officialReads.find((r) => r.role === role)?.url ??
-      ownHits.find((h) => officialPageRole(h) === role)?.url ??
+      byFraudScore(readOk).find((r) => r.role === role)?.url ??
+      byFraudScore(officialReads).find((r) => r.role === role)?.url ??
+      byFraudScore(ownHits).find((h) => officialPageRole(h) === role)?.url ??
       null;
     const fraudUrl = fraudNotice?.url ?? pageFor("fraud");
     const careersUrl = pageFor("careers");
