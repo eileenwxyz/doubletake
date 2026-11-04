@@ -129,6 +129,15 @@ export function hasImpersonationNotice(text: string): boolean {
   return IMPERSONATION.test(text);
 }
 
+// Wording that reports a recruiting scam specifically, not just a bad job:
+// "fake recruiter", "job offer scam", "scammers posing as ...".
+const RECRUITING_SCAM =
+  /\b(recruit\w* (scam|fraud)|(job|interview|offer|employment|hiring) (scam|fraud)|fake (recruiters?|job offers?|offers?|interviews?|jobs?)|scammers? (posing|pretending|impersonating)|impersonat\w* (a |an |our |the )?(recruiters?|hiring managers?|company))\b/i;
+
+export function reportsRecruitingScam(title: string | null, text: string): boolean {
+  return RECRUITING_SCAM.test(`${title ?? ""}\n${plainText(text)}`);
+}
+
 // "Is Acme legit?" and similar posts ask a question; they aren't reports.
 export function isQuestionPost(title: string | null, text: string): boolean {
   const heading = (title ?? text.split("\n").find((l) => l.trim() !== "") ?? "")

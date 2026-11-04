@@ -86,7 +86,21 @@ export const DIRECTORIES: ReadonlyArray<SitePages> = [
   { domain: "bbb.org", pathPattern: /^\/us\/(?:[^/]+\/)+profile\// },
   { domain: "tracxn.com" },
   { domain: "crunchbase.com" },
+  // Employee reviews, interview and salary pages: about working at the
+  // company, not scam reports.
+  ...["glassdoor.com", "glassdoor.co.uk", "glassdoor.ca"].map((domain) => ({
+    domain,
+    pathPattern: /^\/(reviews|interview|salary|salaries)\//,
+  })),
 ];
+
+// Directory sites whose pages carry people's own accounts. A page there
+// that specifically reports a recruiting scam is a Report, not a listing.
+export const FIRST_HAND_DIRECTORIES: ReadonlySet<string> = new Set([
+  "glassdoor.com",
+  "glassdoor.co.uk",
+  "glassdoor.ca",
+]);
 
 // Forums and review sites where people post first-hand reports.
 export const REPORT_SITES: ReadonlyArray<SitePages> = [

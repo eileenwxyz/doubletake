@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   boardPostingInfo,
   checkCareers,
+  cutAtOtherJobs,
   forUnnamedClient,
   isUnsupportedJobSiteLink,
   parseAggregatorPosting,
@@ -774,5 +775,25 @@ describe("optional careers reads", () => {
         link,
       ),
     ).toMatchObject({ employer: "Northwind Group", site: "northwind.example", careersUrl: "https://careers.northwind.example/3869AO" });
+  });
+});
+
+describe("cutting off the other jobs a site lists", () => {
+  const MARKER = /\b(similar jobs|recommended jobs)\b/i;
+  const DESCRIPTION = "Our client seeks a product designer to shape its customer apps and design system.";
+
+  it("ignores tab labels above the description", () => {
+    const text = `# Product Designer\n\n+ Recommended Jobs\n\nRecommended Jobs\n\n${DESCRIPTION}\n\n## Similar jobs\n\n# Other job`;
+    expect(cutAtOtherJobs(text, MARKER)).toBe(`# Product Designer\n\n+ Recommended Jobs\n\nRecommended Jobs\n\n${DESCRIPTION}\n`);
+  });
+
+  it("ignores a '+' tab label or a bare short label after the description", () => {
+    const text = `# Product Designer\n\n${DESCRIPTION}\n\n+ Similar Jobs\n\nApply by Friday.\n\nRecommended Jobs`;
+    expect(cutAtOtherJobs(text, MARKER)).toBe(text);
+  });
+
+  it("cuts at a section that follows the description", () => {
+    const text = `# Product Designer\n\n${DESCRIPTION}\n\nRecommended Jobs\nGraphic Designer at Globex\nTempe`;
+    expect(cutAtOtherJobs(text, MARKER)).toBe(`# Product Designer\n\n${DESCRIPTION}\n`);
   });
 });

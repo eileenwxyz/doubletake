@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { extract, toPageReads } from "@/lib/parallel";
+import { extract, search, toPageReads } from "@/lib/parallel";
 
 const LONG = "Acme recruiters only contact candidates from the @acme.example domain. ".repeat(5);
 
@@ -60,5 +60,36 @@ describe("Extract results", () => {
     expect(reads).toEqual([
       { url: pages[1].url, role: "fraud", ok: false, title: null, publishDate: null, text: "" },
     ]);
+  });
+});
+
+describe("Search requests", () => {
+  async function sentBody(options?: { includeDomains?: string[] }) {
+    vi.stubEnv("PARALLEL_API_KEY", "test-key");
+    const fetchMock = vi.fn(async () => Response.json({ results: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+    await search("objective", ["Acme careers"], options);
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("https://api.parallel.ai/v1/search");
+    return JSON.parse(init.body as string);
+  }
+
+  it("nests the domain filter inside advanced_settings", async () => {
+    expect(await sentBody({ includeDomains: ["acme.example"] })).toEqual({
+      objective: "objective",
+      search_queries: ["Acme careers"],
+      mode: "advanced",
+      advanced_settings: {
+        max_results: 10,
+        source_policy: { include_domains: ["acme.example"] },
+      },
+    });
+  });
+
+  it("sends no source_policy without a domain filter, and never one at the top level", async () => {
+    const body = await sentBody();
+    expect(body.advanced_settings).toEqual({ max_results: 10 });
+    expect(body).not.toHaveProperty("source_policy");
+    expect(await sentBody({ includeDomains: ["acme.example"] })).not.toHaveProperty("source_policy");
   });
 });

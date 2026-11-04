@@ -90,7 +90,7 @@ export function toSearchHits(data: ParallelSearchResponse | null | undefined): S
 }
 
 // includeDomains limits results to those domains and their subdomains
-// (Parallel's source_policy.include_domains).
+// (Parallel's advanced_settings.source_policy.include_domains).
 export async function search(
   objective: string,
   queries: string[],
@@ -102,10 +102,14 @@ export async function search(
       objective,
       search_queries: queries,
       mode: "advanced",
-      advanced_settings: { max_results: 10 },
-      ...(options.includeDomains?.length
-        ? { source_policy: { include_domains: options.includeDomains } }
-        : {}),
+      // In /v1/search, source_policy goes inside advanced_settings; at the
+      // top level the API refuses the request with 422.
+      advanced_settings: {
+        max_results: 10,
+        ...(options.includeDomains?.length
+          ? { source_policy: { include_domains: options.includeDomains } }
+          : {}),
+      },
     },
     "search",
   )) as ParallelSearchResponse;

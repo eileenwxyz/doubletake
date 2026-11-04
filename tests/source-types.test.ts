@@ -261,6 +261,38 @@ describe("rating sites: only a page about the checked domain is an automated rat
   });
 });
 
+describe("Glassdoor employee pages", () => {
+  it("types reviews, interview and salary pages as Directory", () => {
+    for (const path of ["/Reviews/Acme-Reviews-E123456.htm", "/Interview/Acme-Interview-Questions-E123456.htm", "/Salary/Acme-Salaries-E123456.htm"]) {
+      expect(type(`https://www.glassdoor.com${path}`, "Acme | Glassdoor", "Acme is a scam of a company, fake promises and fraud-level pay.")).toBe("Directory");
+    }
+  });
+
+  it("can't raise a caution from an angry review", () => {
+    const review = hit(
+      "https://www.glassdoor.com/Reviews/Acme-Reviews-E123456.htm",
+      "Acme Reviews | Glassdoor",
+      "Acme is a scam of a company. Fake promises, fraud-level pay, stay away.",
+    );
+    const r = buildReport(acmeInput({ warningHits: [review] })) as CheckReport;
+    expect(r.sources.find((s) => s.url === review.url)?.type).toBe("Directory");
+    expect(r.reasons.some((x) => x.direction === "caution")).toBe(false);
+    expect(r.verdict).toBe("no_red_flags");
+  });
+
+  it("counts a Glassdoor page that reports a recruiting scam by name", () => {
+    expect(
+      type(
+        "https://www.glassdoor.com/Interview/Acme-Interview-Questions-E123456.htm",
+        "Fake recruiter posing as Acme",
+        "Scammers posing as Acme recruiters sent me a fake job offer and asked me to buy equipment.",
+      ),
+    ).toBe("Report");
+    // A question isn't a report.
+    expect(type("https://www.glassdoor.com/Interview/Acme-E1.htm", "Is this Acme job offer scam real?", "Acme")).toBe("Directory");
+  });
+});
+
 describe("jobscamscore.com", () => {
   it("is an automated rating site", () => {
     expect(type("https://jobscamscore.com/company/acme.example", "Acme job scam score", "Acme score: 82")).toBe("Automated rating");

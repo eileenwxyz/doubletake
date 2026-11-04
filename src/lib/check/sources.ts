@@ -1,6 +1,7 @@
 import {
   ADVICE_SITES,
   AUTOMATED_RATING_SITES,
+  FIRST_HAND_DIRECTORIES,
   REGULATORS,
 } from "./domain-lists";
 import {
@@ -12,7 +13,7 @@ import {
   pageKey,
   registrableDomain,
 } from "./domains";
-import { isQuestionPost, namesCompanyExactly } from "./text";
+import { isQuestionPost, namesCompanyExactly, reportsRecruitingScam } from "./text";
 import type { SourceType } from "./types";
 
 export type SourceContext = {
@@ -102,7 +103,20 @@ export function classifySource(
       ? "Automated rating"
       : "General advice";
   }
-  if (isDirectory(url)) return "Directory";
+  if (isDirectory(url)) {
+    // Glassdoor reviews, interview and salary pages are listings, so they
+    // can't raise a caution; one that reports a recruiting scam by name is
+    // a Report.
+    if (
+      FIRST_HAND_DIRECTORIES.has(domain) &&
+      names &&
+      reportsRecruitingScam(title, text) &&
+      !isQuestionPost(title, text)
+    ) {
+      return "Report";
+    }
+    return "Directory";
+  }
   if (ADVICE_SITES.has(domain)) return "General advice";
 
   if (isReportSite(url)) {

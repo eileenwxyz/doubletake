@@ -179,7 +179,38 @@ export type LinkedInPosting = {
 };
 
 // Everything from these headings down is about other jobs and other people.
-const OTHER_CONTENT = /^.*\b(similar jobs|people also viewed)\b/im;
+const OTHER_CONTENT = /\b(similar jobs|people also viewed)\b/i;
+
+const wordCount = (line: string) => line.split(/\s+/).filter(Boolean).length;
+// A line of the description: a sentence of at least eight words.
+const isSentence = (line: string) => wordCount(line) >= 8 && /[.!?](\s|$)/.test(line);
+const isHeading = (line: string) => /^\s{0,3}#{1,6}\s/.test(line);
+
+// The posting without the other jobs and people a site lists after it.
+// Cuts only at a line naming that content ("## Similar jobs") that comes
+// after the posting's description has started, so a "+ Recommended Jobs"
+// tab above the description doesn't cut the description off. Tab and
+// navigation labels (a line starting with "+", or a short line with
+// nothing after it) never cut. Without a description sentence, any such
+// line after the first heading cuts.
+export function cutAtOtherJobs(text: string, marker: RegExp): string {
+  const lines = text.split("\n");
+  const clean = lines.map((l) => cleanText(l));
+  let start = clean.findIndex((l, i) => !isHeading(lines[i]) && isSentence(l));
+  if (start < 0) start = lines.findIndex((l) => isHeading(l));
+  if (start < 0) start = 0;
+
+  for (let i = start + 1; i < lines.length; i++) {
+    const line = clean[i];
+    if (!marker.test(line)) continue;
+    if (/^\s*\+/.test(lines[i])) continue;
+    const short = wordCount(line) < 4;
+    const hasMore = clean.slice(i + 1, i + 4).some((l) => l !== "");
+    if (short && !isHeading(lines[i]) && !hasMore) continue;
+    return lines.slice(0, i).join("\n");
+  }
+  return text;
+}
 const TITLE_FORMAT = /^(.+?)\s+hiring\s+(.+?)(?:\s+in\s+[^|]+)?\s*\|\s*LinkedIn\s*$/i;
 const POSTED =
   /\b(?:re)?posted\s+(\d+|an?|one)\s+(minute|hour|day|week|month|year)s?\s+ago\b|\b(\d+|an?|one)\s+(minute|hour|day|week|month|year)s?\s+ago\b/i;
@@ -203,8 +234,7 @@ function plausibleName(value: string | null | undefined): string | null {
 // couldn't be read or doesn't name a company.
 export function parseLinkedInPosting(read: Pick<PageRead, "ok" | "title" | "text">): LinkedInPosting | null {
   if (!read.ok) return null;
-  const cut = OTHER_CONTENT.exec(read.text);
-  const body = cut ? read.text.slice(0, cut.index) : read.text;
+  const body = cutAtOtherJobs(read.text, OTHER_CONTENT);
 
   const fromTitle = read.title ? TITLE_FORMAT.exec(read.title.trim()) : null;
   const companyLink =
@@ -336,7 +366,7 @@ export function websiteFieldDomain(text: string): string | null {
 
 // Aggregators list other employers' jobs below the posting.
 const AGGREGATOR_OTHER_CONTENT =
-  /^.*\b(similar jobs|people also viewed|people also searched|jobs you may (?:also )?like|recommended jobs|related jobs|more jobs|other jobs)\b/im;
+  /\b(similar jobs|people also viewed|people also searched|jobs you may (?:also )?like|recommended jobs|related jobs|more jobs|other jobs)\b/i;
 const EMPLOYER_LABEL =
   /^[ \t]*(?:[-*][ \t]+)?(?:\*\*|__)?(?:company|company name|employer|employer name|hiring (?:company|organi[sz]ation)|organi[sz]ation|posted by)(?:\*\*|__)?[ \t]*[:：]?[ \t]*(?:\*\*|__)?[ \t]*(.*)$/gim;
 const TITLE_LABEL =
@@ -397,8 +427,7 @@ export function parseAggregatorPosting(
   link: Extract<JobLink, { kind: "aggregator" }>,
 ): AggregatorPosting | null {
   if (!read.ok) return null;
-  const cut = AGGREGATOR_OTHER_CONTENT.exec(read.text);
-  const body = cut ? read.text.slice(0, cut.index) : read.text;
+  const body = cutAtOtherJobs(read.text, AGGREGATOR_OTHER_CONTENT);
   const lines = body.split("\n");
 
   const notSite = (name: string | null) =>

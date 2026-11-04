@@ -13,6 +13,28 @@ const FILLER =
   "Northwind Group places designers and engineers with technology companies across the Southwest. " +
   "Every role we recruit for is listed on our own careers site, and we never charge candidates.";
 
+const POSTING_WITH_TABS = `# Product Designer
+
+at Northwind Group in Phoenix, Arizona, United States
+
++ Job Details
++ Recommended Jobs
++ Similar Jobs
+
+## Job Description
+
+Our client seeks a product designer to shape its customer apps. Northwind Group places designers and engineers with technology companies across the Southwest.
+
+Shortcut: careers.northwind.example/3869AO
+
+## Recommended Jobs
+
+# Graphic Designer
+
+at Globex in Tempe, Arizona, United States
+
+Please Wait`;
+
 const POSTING = `# Product Designer
 
 at Northwind Group in Phoenix, Arizona, United States
@@ -31,10 +53,12 @@ type ExtractResult = { url: string; title?: unknown; publish_date?: unknown; ful
 type Behaviour = {
   // What a read of the short careers link returns.
   careers: "redirect" | "error" | "loading" | "network";
-  // The search API refuses source_policy.
+  // The search API refuses the domain filter even in the right place.
   refuseDomainFilter?: boolean;
   // Search results with missing or wrongly typed fields.
   oddResults?: boolean;
+  // The posting has "+ Recommended Jobs" tab labels above its description.
+  tabs?: boolean;
 };
 
 let bodies: Array<{ url: string; body: Record<string, unknown> }> = [];
@@ -46,7 +70,10 @@ function stubParallel(b: Behaviour) {
     const body = JSON.parse(String(init.body)) as Record<string, unknown>;
     bodies.push({ url, body });
     if (url.endsWith("/search")) {
-      if (b.refuseDomainFilter && body.source_policy) return new Response("{}", { status: 422 });
+      const settings = body.advanced_settings as Record<string, unknown> | undefined;
+      // Like the real API: source_policy at the top level is refused.
+      if (body.source_policy) return new Response("{}", { status: 422 });
+      if (b.refuseDomainFilter && settings?.source_policy) return new Response("{}", { status: 422 });
       const queries = body.search_queries as string[];
       if (!queries.some((q) => q.includes("official website"))) return Response.json({ results: [] });
       return Response.json({
@@ -66,7 +93,9 @@ function stubParallel(b: Behaviour) {
     const results: ExtractResult[] = [];
     const errors: Array<{ url: string; error_type: string; http_status_code: number | null }> = [];
     for (const u of urls) {
-      if (u === LINK) results.push({ url: u, title: "Product Designer - AZ Job Connection", full_content: POSTING });
+      if (u === LINK) {
+        results.push({ url: u, title: "Product Designer - AZ Job Connection", full_content: b.tabs ? POSTING_WITH_TABS : POSTING });
+      }
       else if (u === SHORT) {
         if (b.careers === "network") throw new TypeError("fetch failed");
         if (b.careers === "redirect") {
@@ -117,7 +146,23 @@ describe("the live azjobconnection.gov layout", () => {
     expect(r.couldntFind.map((c) => c.text)).toContain(UNNAMED);
     // The search was pinned to the domain the posting links to.
     const official = bodies.find((x) => (x.body.search_queries as string[] | undefined)?.includes("Northwind Group official website careers"));
-    expect(official?.body.source_policy).toEqual({ include_domains: ["northwind.example"] });
+    expect(official?.body.advanced_settings).toEqual({
+      max_results: 10,
+      source_policy: { include_domains: ["northwind.example"] },
+    });
+    // The domain filter worked the first time: no unfiltered retry.
+    expect(bodies.filter((x) => (x.body.search_queries as string[] | undefined)?.includes("Northwind Group official website careers"))).toHaveLength(1);
+  });
+
+  it("isn't cut off by a '+ Recommended Jobs' tab above the description", async () => {
+    stubParallel({ careers: "redirect", tabs: true });
+    const r = await check();
+    expect(r.status).toBe("ok");
+    expect(r.companyName).toBe("Northwind Group");
+    expect(r.job).toMatchObject({ unnamedClient: true, careersUrl: SHORT });
+    expect(r.couldntFind.map((c) => c.text)).toContain(UNNAMED);
+    // The recommended jobs after the description are still left out.
+    expect(JSON.stringify(r)).not.toMatch(/globex|graphic designer/i);
   });
 
   it("still returns the result when the careers read fails", async () => {
