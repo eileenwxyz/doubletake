@@ -7,12 +7,14 @@ import {
 } from "./domain-lists";
 import {
   compactName,
+  coreName,
   dedupeByUrl,
   domainLabel,
   hiringPlatform,
   isDirectory,
   isFreeEmailProvider,
   isGovernment,
+  jobAggregator,
   isReportDomain,
   registrableDomain,
 } from "./domains";
@@ -30,7 +32,7 @@ export type OfficialDomain =
   | { status: "none" };
 
 // Domains that can't be a company's own site.
-function isThirdParty(domain: string): boolean {
+export function isThirdParty(domain: string): boolean {
   return (
     SHARED_SITES.has(domain) ||
     isReportDomain(domain) ||
@@ -40,13 +42,14 @@ function isThirdParty(domain: string): boolean {
     isGovernment(domain) ||
     isDirectory(`https://${domain}/`) ||
     hiringPlatform(domain) !== null ||
+    jobAggregator(domain) !== null ||
     isFreeEmailProvider(domain)
   );
 }
 
 function labelMatchesName(domain: string, company: string): boolean {
   const label = (domainLabel(domain) ?? "").replace(/-/g, "");
-  const name = compactName(company);
+  const name = compactName(coreName(company));
   if (label.length < 2 || name.length < 2) return false;
   return label.includes(name) || name.includes(label);
 }
@@ -55,8 +58,13 @@ function labelMatchesName(domain: string, company: string): boolean {
 //
 // - A website the user entered always wins.
 // - Otherwise, count official-search results per registrable domain, keeping
-//   only results whose title or excerpt names the company and skipping
+//   only results whose title or excerpt names the company (its core name,
+//   without suffixes such as Group or Inc; see coreName) and skipping
 //   third-party sites. Domains whose name matches the company's are preferred.
+// - Two or more domains whose name matches the company's (premise.example,
+//   premisehealth.example, premise-one.example) mean namesakes: the answer
+//   is "ambiguous" however the counts compare, unless the sender's domain is
+//   one of them.
 // - The leader must have at least twice as many naming results as the
 //   runner-up when the runner-up has two or more; otherwise the results point
 //   to more than one company and the answer is "ambiguous". If the sender's
@@ -77,12 +85,20 @@ export function findOfficialDomain(
   for (const hit of dedupeByUrl(hits)) {
     const domain = registrableDomain(hit.url);
     if (!domain || isThirdParty(domain)) continue;
-    if (!namesCompanyLoosely(`${hit.title ?? ""}\n${hit.text}`, company)) continue;
+    // The company's own pages may leave off "Group", "Inc" and the like.
+    if (!namesCompanyLoosely(`${hit.title ?? ""}\n${hit.text}`, coreName(company))) continue;
     counts.set(domain, (counts.get(domain) ?? 0) + 1);
   }
 
   const all = [...counts.entries()].sort((a, b) => b[1] - a[1]);
   const named = all.filter(([domain]) => labelMatchesName(domain, company));
+  const senderRoot = senderDomain ? registrableDomain(senderDomain) : null;
+  if (named.length >= 2) {
+    if (senderRoot && named.some(([d]) => d === senderRoot)) {
+      return { status: "found", domain: senderRoot, from: "email" };
+    }
+    return { status: "ambiguous" };
+  }
   const pool = named.length ? named : all.filter(([, n]) => n >= 2);
   if (pool.length === 0) return { status: "none" };
 
@@ -92,7 +108,6 @@ export function findOfficialDomain(
     (runnerUp[1] === leader[1] || (runnerUp[1] >= 2 && leader[1] < 2 * runnerUp[1]));
   if (!contested) return { status: "found", domain: leader[0], from: "search" };
 
-  const senderRoot = senderDomain ? registrableDomain(senderDomain) : null;
   const competing = pool.filter(([, n]) => n * 2 > leader[1]).map(([d]) => d);
   if (senderRoot && competing.includes(senderRoot)) {
     return { status: "found", domain: senderRoot, from: "email" };

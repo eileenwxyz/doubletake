@@ -4,6 +4,7 @@ import {
   DIRECTORIES,
   FREE_EMAIL_PROVIDERS,
   HIRING_PLATFORMS,
+  JOB_AGGREGATORS,
   LOCALE_SEGMENT,
   PERSONAL_PROFILE_PATHS,
   REPORT_SITES,
@@ -74,6 +75,15 @@ export function hiringPlatform(hostOrUrl: string): string | null {
   return HIRING_PLATFORMS.find((p) => p.domains.includes(domain))?.name ?? null;
 }
 
+// Job aggregators and public job boards that carry other employers'
+// postings: listed ones by name, and any other government job board found
+// by its link (see parseJobLink).
+export function jobAggregator(hostOrUrl: string): (typeof JOB_AGGREGATORS)[number] | null {
+  const domain = registrableDomain(hostOrUrl);
+  if (!domain) return null;
+  return JOB_AGGREGATORS.find((a) => a.domains.includes(domain)) ?? null;
+}
+
 export function isFreeEmailProvider(hostOrUrl: string): boolean {
   const domain = registrableDomain(hostOrUrl);
   return domain !== null && FREE_EMAIL_PROVIDERS.has(domain);
@@ -123,11 +133,17 @@ export function isPersonalUrl(url: string): boolean {
 
 // Identifies one company's board on a shared hiring platform:
 // jobs.lever.co/acme and jobs.lever.co/acme/123 share "jobs.lever.co/acme".
+// Greenhouse's two board hosts and its embed links
+// (boards.greenhouse.io/embed/job_app?for=acme) share one key.
 export function boardKey(url: string): string | null {
   try {
     const parsed = new URL(url);
-    const first = parsed.pathname.split("/").filter(Boolean)[0] ?? "";
-    return `${parsed.hostname.toLowerCase()}/${first.toLowerCase()}`;
+    const host = parsed.hostname.toLowerCase().replace(/^job-boards\.(?=(eu\.)?greenhouse\.io$)/, "boards.");
+    let first = parsed.pathname.split("/").filter(Boolean)[0] ?? "";
+    if (host.endsWith("greenhouse.io") && first.toLowerCase() === "embed") {
+      first = parsed.searchParams.get("for") ?? "";
+    }
+    return `${host}/${first.toLowerCase()}`;
   } catch {
     return null;
   }
@@ -242,6 +258,24 @@ export function stripCorporateSuffix(name: string): string {
       "",
     )
     .trim();
+}
+
+// Words a company's own pages often leave off its name: "Northwind Group"
+// calls itself "Northwind" on its site.
+const COMMON_SUFFIX =
+  /[\s,]+(group|inc|incorporated|llc|ltd|limited|corp|corporation|co|company|holdings|international|solutions|gmbh|plc)\.?$/i;
+
+// The company's name without common suffixes, for matching it against its
+// own pages: "Northwind Group, Inc." -> "Northwind". A suffix word is never
+// stripped when it is the whole name ("Solutions" stays "Solutions"), and
+// stripping stops before leaving only an article ("The Group" stays).
+export function coreName(name: string): string {
+  let current = name.trim().replace(/\s+/g, " ");
+  for (;;) {
+    const next = current.replace(COMMON_SUFFIX, "").trim();
+    if (next === current || next.length < 2 || /^(the|a|an)$/i.test(next)) return current;
+    current = next;
+  }
 }
 
 // A near-copy of an official domain: one character off, the official name

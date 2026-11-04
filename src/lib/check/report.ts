@@ -15,6 +15,7 @@ import {
   pageKey,
   registrableDomain,
 } from "./domains";
+import { checkCareers } from "./job-link";
 import { findOfficialDomain, officialPageRole } from "./official";
 import { evaluateSender, type SenderResult } from "./sender";
 import { classifySource, type SourceContext } from "./sources";
@@ -35,6 +36,7 @@ import {
   type CheckResponse,
   type CouldntFind,
   type Direction,
+  type JobResult,
   type NextStepKind,
   type PageRead,
   type Reason,
@@ -59,6 +61,25 @@ export type CheckInput = {
   locale?: string;
   // The search queries that ran, shown under "How we checked".
   searches?: string[];
+  // Set for a job check. The posting itself, when one was linked, is in
+  // reads with role "job"; its text is only used to see whether it says
+  // the job has closed.
+  job?: JobInput | null;
+};
+
+export type JobInput = {
+  title: string | null;
+  postingUrl: string | null;
+  // "LinkedIn", or the job board's name ("Lever").
+  site: string | null;
+  posted: string | null;
+  // The registrable domain of the aggregator or job board the posting is
+  // on, when it isn't the employer's own site or a hiring platform.
+  siteDomain?: string | null;
+  // A staffing agency posted the job for a client it doesn't name. The
+  // agency is what gets checked; the unnamed client is not a warning sign
+  // (agencies often keep clients confidential).
+  unnamedClient?: boolean;
 };
 
 const MAX_REASONS = 3;
@@ -74,7 +95,8 @@ type Evidence = {
   type: SourceType;
 };
 
-type Candidate = Omit<Reason, "age"> & { priority: number };
+// keep: shown even when an earlier reason cites the same page.
+type Candidate = Omit<Reason, "age"> & { priority: number; keep?: boolean };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -163,11 +185,17 @@ export function buildReport(input: CheckInput): CheckResponse {
     (r) => hasImpersonationNotice(r.text) || (r.role === "fraud" && hasWarningLanguage(r.text)),
   );
 
+  const senderRoot = input.senderDomain ? registrableDomain(input.senderDomain) : null;
   const ctx: SourceContext = {
     company,
     officialDomain,
     linkedBoards: links.linkedBoards,
     linkedDomains: links.linkedDomains,
+    senderDomain: senderRoot,
+    jobSite:
+      input.job?.siteDomain && input.job.postingUrl
+        ? { domain: input.job.siteDomain, postingUrl: input.job.postingUrl }
+        : null,
   };
 
   // All evidence, one entry per distinct URL. Full text replaces excerpts
@@ -183,7 +211,10 @@ export function buildReport(input: CheckInput): CheckResponse {
       url: item.url,
       title: read?.title ?? item.title,
       publishDate: read?.publishDate ?? item.publishDate,
-      text: read?.ok ? read.text : item.text,
+      // A job posting's own text never becomes evidence: LinkedIn pages
+      // carry other jobs and people, and a board posting is the claim being
+      // checked.
+      text: read?.role === "job" ? "" : read?.ok ? read.text : item.text,
     };
   });
   const evidence: Evidence[] = dedupeByUrl(raw, locale)
@@ -214,7 +245,6 @@ export function buildReport(input: CheckInput): CheckResponse {
   const verdictWarnings = warnings.filter((e) => e.type !== "Other");
   const authorityWarnings = warnings.filter((e) => e.type === "Authority");
   // Warnings that name the sender's own (non-company, non-shared) domain.
-  const senderRoot = input.senderDomain ? registrableDomain(input.senderDomain) : null;
   const senderWarnings =
     senderRoot &&
     senderRoot !== officialDomain &&
@@ -292,6 +322,7 @@ export function buildReport(input: CheckInput): CheckResponse {
     text: string,
     sourceUrl: string | null,
     sourceType?: SourceType,
+    keep = false,
   ) => {
     const type =
       sourceType ??
@@ -299,7 +330,7 @@ export function buildReport(input: CheckInput): CheckResponse {
       (sourceUrl && officialDomain && registrableDomain(sourceUrl) === officialDomain
         ? "Official"
         : "Other");
-    candidates.push({ priority, direction, text, sourceUrl, sourceType: type });
+    candidates.push({ priority, direction, text, sourceUrl, sourceType: type, keep });
   };
 
   if (sender && input.senderDomain) {
@@ -353,6 +384,67 @@ export function buildReport(input: CheckInput): CheckResponse {
   for (const w of authorityWarnings) {
     add(1, "caution", REASONS.authorityWarning(displayHost(w.url), name), w.url);
   }
+  // ---- Job ----
+  let job: JobResult | null = null;
+  if (input.job) {
+    const posting =
+      input.reads.find((r) => r.role === "job" && input.job?.postingUrl && pageKey(r.url) === pageKey(input.job.postingUrl)) ??
+      null;
+    const postingType = posting
+      ? evidence.find((e) => pageKey(e.url) === pageKey(posting.url))?.type ?? null
+      : null;
+    // The company's own careers pages and the job boards its site links to.
+    const listings = input.reads.filter(
+      (r) =>
+        r.role === "careers" &&
+        ((officialDomain && registrableDomain(r.url) === officialDomain) ||
+          (hiringPlatform(r.url) !== null && links.linkedBoards.has(boardKey(r.url) ?? ""))),
+    );
+    // Optional: if the careers check itself fails, it is reported as
+    // "couldn't check" and the rest of the result still comes back.
+    let careers: ReturnType<typeof checkCareers>;
+    try {
+      careers = checkCareers(input.job.title, listings, posting);
+    } catch {
+      careers = { result: "couldnt_check", url: null };
+    }
+    const isLinkedIn = input.job.site === "LinkedIn";
+    job = {
+      title: input.job.title,
+      postingUrl: input.job.postingUrl,
+      site: input.job.site,
+      posted: input.job.posted,
+      postingOfficial: postingType === "Official",
+      unnamedClient: input.job.unnamedClient ?? false,
+      careers: careers.result,
+      careersUrl: careers.url,
+    };
+
+    const title = input.job.title ?? "";
+    const host = careers.url ? displayHost(careers.url) : "";
+    if (careers.result === "closed") {
+      add(1, "neutral", REASONS.jobClosed(host), careers.url, undefined, true);
+    } else if (careers.result === "listed") {
+      add(1, "reassures", REASONS.jobListed(title, name, host), careers.url, "Official", true);
+    } else if (careers.result === "not_listed") {
+      add(1, "caution", REASONS.jobNotListed(title, name, host), careers.url, "Official", true);
+    }
+
+    // Hiring-platform boards only: employers don't link to their postings
+    // on aggregators or public job boards, so that isn't a caution there.
+    if (posting && !isLinkedIn && !input.job.siteDomain && input.job.site) {
+      if (postingType === "Official") {
+        add(2, "reassures", REASONS.boardLinked(displayHost(posting.url), name, input.job.site), posting.url);
+      } else if (officialDomain && readOk.length) {
+        add(2, "caution", REASONS.boardUnlinked(name, input.job.site), posting.url);
+      }
+    }
+    if (posting && isLinkedIn) {
+      // Supporting evidence at most: LinkedIn doesn't verify postings.
+      add(4, "neutral", REASONS.linkedinPosting(name, input.job.posted), posting.url);
+    }
+  }
+
   for (const w of warnings.filter((e) => e.type !== "Authority")) {
     const text =
       w.type === "Report"
@@ -385,7 +477,7 @@ export function buildReport(input: CheckInput): CheckResponse {
     .filter((c) => {
       if (!c.sourceUrl) return true;
       const key = pageKey(c.sourceUrl);
-      if (seen.has(key)) return false;
+      if (seen.has(key) && !c.keep) return false;
       seen.add(key);
       return true;
     })
@@ -424,6 +516,13 @@ export function buildReport(input: CheckInput): CheckResponse {
         url: null,
       });
     }
+  }
+
+  if (job?.unnamedClient) {
+    couldntFind.push({ kind: "couldnt_check", text: COULDNT_FIND.clientNotNamed(name), url: null });
+  }
+  if (job && job.title && job.careers === "couldnt_check") {
+    couldntFind.push({ kind: "couldnt_check", text: COULDNT_FIND.noJobListings(name), url: null });
   }
 
   // ---- Primary next step ----
@@ -474,6 +573,7 @@ export function buildReport(input: CheckInput): CheckResponse {
     senderDomain: input.senderDomain,
     lookalike: lookalike && lookalike.imitates ? lookalike : null,
     searches: input.searches ?? [],
+    job,
   };
 }
 

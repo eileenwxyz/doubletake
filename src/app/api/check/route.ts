@@ -1,4 +1,6 @@
 import { domainLabel, hostOf, isRealDomain, preferredLocale } from "@/lib/check/domains";
+import { isUnsupportedJobSiteLink, parseJobLink, type JobLink } from "@/lib/check/job-link";
+import { describeFailure } from "@/lib/check/errors";
 import { runCheck } from "@/lib/check/run";
 import {
   GENERIC_ERROR,
@@ -10,6 +12,8 @@ import { clientIp, takeCheck, type LimitResult } from "@/lib/rate-limit";
 import type { CheckApiError, CheckApiResponse } from "@/lib/check/types";
 
 const MAX_LENGTH = 200;
+// Job links, LinkedIn search links especially, run long.
+const MAX_LINK_LENGTH = 2048;
 
 // The page gives up after 60 seconds; the server stops a little sooner so
 // the visitor gets the check back.
@@ -48,21 +52,43 @@ export async function POST(request: Request) {
     return badRequest(INPUT_ERRORS.noBody);
   }
 
-  const { company, email, website } = (body ?? {}) as {
+  const { company, email, website, jobTitle } = (body ?? {}) as {
     company?: unknown;
     email?: unknown;
     website?: unknown;
+    jobTitle?: unknown;
   };
 
   if (typeof company !== "string" || company.trim() === "") {
     return badRequest(INPUT_ERRORS.noCompany);
   }
-  let name = company.trim();
-  if (name.length > MAX_LENGTH) {
-    return badRequest(INPUT_ERRORS.companyTooLong(MAX_LENGTH));
+  let name: string | null = company.trim();
+  const isLink = /^https?:\/\//i.test(name) || LOOKS_LIKE_WEBSITE.test(name);
+  if (isLink && name.length > MAX_LINK_LENGTH) {
+    return badRequest(INPUT_ERRORS.linkTooLong(MAX_LINK_LENGTH));
   }
-  if (name.includes("@")) {
-    return badRequest(INPUT_ERRORS.emailInCompany);
+  // A job posting link. Only the cleaned link goes on: for LinkedIn that is
+  // https://www.linkedin.com/jobs/view/<id>, never what was pasted, which
+  // can hold the user's search terms and location.
+  const jobLink: JobLink | null = isLink ? parseJobLink(name) : null;
+  if (!jobLink) {
+    if (isLink && isUnsupportedJobSiteLink(name)) {
+      return badRequest(INPUT_ERRORS.notAJobLink);
+    }
+    if (name.length > MAX_LENGTH) {
+      return badRequest(INPUT_ERRORS.companyTooLong(MAX_LENGTH));
+    }
+    if (name.includes("@")) {
+      return badRequest(INPUT_ERRORS.emailInCompany);
+    }
+  }
+
+  let title: string | null = null;
+  if (jobTitle !== undefined && jobTitle !== null && jobTitle !== "") {
+    if (typeof jobTitle !== "string" || jobTitle.trim().length > MAX_LENGTH) {
+      return badRequest(INPUT_ERRORS.badJobTitle(MAX_LENGTH));
+    }
+    title = jobTitle.trim().replace(/\s+/g, " ") || null;
   }
 
   let site: string | null = null;
@@ -73,10 +99,14 @@ export async function POST(request: Request) {
     site = websiteFrom(website.trim());
     if (!site) return badRequest(INPUT_ERRORS.badWebsite);
   }
-  const typedSite = websiteFrom(name);
-  if (typedSite) {
-    site = site ?? typedSite;
-    name = domainLabel(typedSite) ?? name;
+  if (jobLink) {
+    name = null;
+  } else {
+    const typedSite = websiteFrom(name);
+    if (typedSite) {
+      site = site ?? typedSite;
+      name = domainLabel(typedSite) ?? name;
+    }
   }
 
   let senderAddress: string | null = null;
@@ -127,12 +157,22 @@ export async function POST(request: Request) {
         senderAddress,
         senderDomain,
         locale: preferredLocale(request.headers.get("accept-language")),
+        jobLink,
+        jobTitle: title,
       }),
       CHECK_DEADLINE_MS,
     );
     const body: CheckApiResponse = { ...result, checksRemaining: limit.remaining ?? null };
     return Response.json(body);
   } catch (error) {
+    // Server log only: the step that failed, the error's name, message and
+    // stack, with the API key, email addresses and query strings removed.
+    console.error(
+      "Check failed",
+      error instanceof DeadlineError
+        ? { step: "deadline", name: "DeadlineError", message: `No result after ${CHECK_DEADLINE_MS} ms`, stack: null }
+        : describeFailure(error, [process.env.PARALLEL_API_KEY, senderAddress ?? undefined]),
+    );
     // A check that returns nothing doesn't count against the limit.
     await limit.refund?.();
     // Deliberately no details: never surface upstream errors or secrets.

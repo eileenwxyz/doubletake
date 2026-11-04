@@ -9,7 +9,8 @@ export type SearchHit = {
   text: string;
 };
 
-export type PageRole = "fraud" | "careers" | "home" | "warning";
+// "job" is the job posting the user linked to.
+export type PageRole = "fraud" | "careers" | "home" | "warning" | "job";
 
 // One Extract API read. ok is false when the page failed to load or came
 // back empty or nearly empty; that means "couldn't read", not "nothing there".
@@ -83,6 +84,37 @@ export type CheckReport = {
   lookalike: { sender: string; imitates: string } | null;
   // The exact search queries that ran.
   searches: string[];
+  // Set when the check was for a job: a posting link, or a job title given
+  // with the company name. Absent on results saved before job checks.
+  job?: JobResult | null;
+};
+
+// "listed": the job is on the company's own careers page or the job board
+// its site links to. "not_listed": those pages were read and the job isn't
+// on them. "closed": the page says the job is no longer available.
+// "couldnt_check": no careers page or board could be read, or no job title
+// is known.
+export type CareersResult = "listed" | "not_listed" | "closed" | "couldnt_check";
+
+export type JobResult = {
+  title: string | null;
+  // The posting link as Doubletake read it (for LinkedIn, the rebuilt
+  // https://www.linkedin.com/jobs/view/<id>, never the link the user pasted).
+  postingUrl: string | null;
+  // Where the posting is: "LinkedIn", a job board such as "Lever", or an
+  // aggregator or public job board such as "Indeed" or "azjobconnection.gov".
+  // The page shows it as "Posted on <site>" (RESULT.postedOn).
+  site: string | null;
+  // How long ago LinkedIn says the job was posted ("2 weeks ago").
+  posted: string | null;
+  // True when the posting is on a job board the company's own site links to.
+  postingOfficial: boolean;
+  // A staffing agency posted the job for a client it doesn't name; the
+  // agency is what was checked.
+  unnamedClient: boolean;
+  careers: CareersResult;
+  // The page the careers result comes from.
+  careersUrl: string | null;
 };
 
 export type NeedMoreDetail = {

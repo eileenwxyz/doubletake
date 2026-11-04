@@ -50,6 +50,11 @@ export default function Result({
       <header className="result-head">
         {isExample && <p className="badge">{RESULT.example}</p>}
         <h1 className="company">{report.companyName}</h1>
+        {report.job?.site && (
+          <p className="result-meta posted-on">
+            <WithDomains text={RESULT.postedOn(report.job.site)} />
+          </p>
+        )}
         {report.officialDomain && (
           <p className="company-domain">
             <Mono>{report.officialDomain}</Mono>

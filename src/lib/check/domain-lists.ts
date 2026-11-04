@@ -86,7 +86,21 @@ export const DIRECTORIES: ReadonlyArray<SitePages> = [
   { domain: "bbb.org", pathPattern: /^\/us\/(?:[^/]+\/)+profile\// },
   { domain: "tracxn.com" },
   { domain: "crunchbase.com" },
+  // Employee reviews, interview and salary pages: about working at the
+  // company, not scam reports.
+  ...["glassdoor.com", "glassdoor.co.uk", "glassdoor.ca"].map((domain) => ({
+    domain,
+    pathPattern: /^\/(reviews|interview|salary|salaries)\//,
+  })),
 ];
+
+// Directory sites whose pages carry people's own accounts. A page there
+// that specifically reports a recruiting scam is a Report, not a listing.
+export const FIRST_HAND_DIRECTORIES: ReadonlySet<string> = new Set([
+  "glassdoor.com",
+  "glassdoor.co.uk",
+  "glassdoor.ca",
+]);
 
 // Forums and review sites where people post first-hand reports.
 export const REPORT_SITES: ReadonlyArray<SitePages> = [
@@ -157,3 +171,45 @@ export const DEFAULT_LOCALE = "en-us";
 // Reserved test suffixes (RFC 2606) that tldts treats as unknown but that we
 // accept as real domains, so fixtures can use .example.
 export const RESERVED_TEST_SUFFIXES: ReadonlySet<string> = new Set(["example", "test"]);
+
+// Job boards whose posting links Doubletake accepts in the company field.
+// hosts are full host names; the company's slug is the first path segment
+// unless the platform's own rules (in job-link.ts) say otherwise.
+export const JOB_BOARD_HOSTS: ReadonlyArray<{ platform: string; hosts: readonly string[] }> = [
+  { platform: "Ashby", hosts: ["jobs.ashbyhq.com"] },
+  {
+    platform: "Greenhouse",
+    hosts: ["boards.greenhouse.io", "job-boards.greenhouse.io", "boards.eu.greenhouse.io", "job-boards.eu.greenhouse.io"],
+  },
+  { platform: "Lever", hosts: ["jobs.lever.co", "jobs.eu.lever.co"] },
+  { platform: "Workable", hosts: ["apply.workable.com"] },
+];
+
+// LinkedIn: job postings are rebuilt as https://www.linkedin.com/jobs/view/<id>.
+export const LINKEDIN_DOMAIN = "linkedin.com";
+
+// Job aggregators and public job boards: sites that carry other employers'
+// postings. A posting there is checked against the employer it names, never
+// the site. keepParams are the only query parameters kept when the link is
+// cleaned (the job's ID); everything else, such as search terms and
+// location, is dropped. Government job boards (any gov suffix) that aren't
+// listed here are recognised by their job-posting paths (see job-link.ts).
+export const JOB_AGGREGATORS: ReadonlyArray<{
+  name: string;
+  domains: readonly string[];
+  keepParams: readonly string[];
+}> = [
+  { name: "Indeed", domains: ["indeed.com", "indeed.co.uk", "indeed.ca", "indeed.com.au"], keepParams: ["jk", "vjk"] },
+  { name: "ZipRecruiter", domains: ["ziprecruiter.com", "ziprecruiter.co.uk"], keepParams: ["jid"] },
+  { name: "Glassdoor", domains: ["glassdoor.com", "glassdoor.co.uk", "glassdoor.ca"], keepParams: ["jl", "joblistingid"] },
+  { name: "Monster", domains: ["monster.com", "monster.co.uk", "monster.ca"], keepParams: ["jobid", "job_id"] },
+  { name: "USAJOBS", domains: ["usajobs.gov"], keepParams: [] },
+  // State job boards, shown by their domain.
+  { name: "azjobconnection.gov", domains: ["azjobconnection.gov"], keepParams: ["jobid", "id", "jo"] },
+];
+
+// Query parameters that hold a job's ID on government job boards not listed
+// above (lower case).
+export const GOV_JOB_ID_PARAMS: ReadonlySet<string> = new Set([
+  "jobid", "job_id", "id", "jo", "joborderid", "jobordernumber", "jobno", "posting", "postingid",
+]);
