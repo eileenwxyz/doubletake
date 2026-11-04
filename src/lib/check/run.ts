@@ -26,10 +26,12 @@ export async function runCheck(req: CheckRequest): Promise<CheckResponse> {
   const warningQueries = [`${company} recruitment fraud`, `${company} job scam`];
   if (senderDomain) warningQueries.push(`${senderDomain} recruiter scam`);
 
+  const officialQueries = [`${company} official website careers`, `${company} recruiting fraud notice email`];
+
   const [officialHits, warningHits] = await Promise.all([
     search(
       `Find ${subject}'s official website, careers page, and any page where the company says which email addresses or domains its recruiters use or warns about recruiting fraud`,
-      [`${company} official website careers`, `${company} recruiting fraud notice email`],
+      officialQueries,
     ),
     search(
       `Find job scam reports or warnings that name ${subject} or the email domain ${senderDomain ?? "(none)"}`,
@@ -63,5 +65,6 @@ export async function runCheck(req: CheckRequest): Promise<CheckResponse> {
     reads,
     now: new Date(),
     locale: req.locale,
+    searches: [...officialQueries, ...warningQueries],
   });
 }

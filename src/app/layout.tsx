@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import { SITE_NAME, TAGLINE } from "@/lib/copy";
+import { FOOTER, SITE_NAME, TAGLINE } from "@/lib/copy";
 import "./globals.css";
 
+// One sans font for everything, and a mono font only for domains and email
+// addresses. globals.css maps them to --font-sans and --font-mono.
 const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],
@@ -20,11 +22,15 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html
-      lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-    >
-      <body className="min-h-full flex flex-col">{children}</body>
+    <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`}>
+      <body>
+        <div className="app">
+          {children}
+          <footer className="footer">
+            <p>{FOOTER}</p>
+          </footer>
+        </div>
+      </body>
     </html>
   );
 }

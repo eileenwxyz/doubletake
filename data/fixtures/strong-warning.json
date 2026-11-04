@@ -1,0 +1,67 @@
+{
+  "status": "ok",
+  "companyName": "Northwind Freight",
+  "checkedAt": "2026-11-03T15:42:00.000Z",
+  "verdict": "strong_warning",
+  "subtitle": "This address is not one of the company's channels.",
+  "companySays": {
+    "quote": "Northwind Freight recruiters only email candidates from @northwindfreight.example addresses.",
+    "domain": "northwindfreight.example"
+  },
+  "reasons": [
+    {
+      "direction": "caution",
+      "text": "The sender's domain northwind-freight.example imitates Northwind Freight's official domain northwindfreight.example.",
+      "sourceType": "Official",
+      "sourceUrl": "https://www.northwindfreight.example/recruiting-fraud",
+      "age": "Published 2026-08-14 (2 months ago)"
+    },
+    {
+      "direction": "caution",
+      "text": "A page on consumer-protection.example warns about Northwind Freight by name.",
+      "sourceType": "Authority",
+      "sourceUrl": "https://consumer-protection.example/alerts/northwind-freight-job-offers",
+      "age": "Published 2026-10-21 (13 days ago)"
+    },
+    {
+      "direction": "reassures",
+      "text": "northwindfreight.example is Northwind Freight's official website.",
+      "sourceType": "Official",
+      "sourceUrl": "https://www.northwindfreight.example/",
+      "age": "Date unknown"
+    }
+  ],
+  "couldntFind": [
+    {
+      "kind": "couldnt_check",
+      "text": "Couldn't read careers.northwindfreight.example.",
+      "url": "https://careers.northwindfreight.example/"
+    }
+  ],
+  "sources": [
+    { "url": "https://www.northwindfreight.example/", "type": "Official", "publishDate": null },
+    { "url": "https://www.northwindfreight.example/recruiting-fraud", "type": "Official", "publishDate": "2026-08-14" },
+    { "url": "https://careers.northwindfreight.example/", "type": "Official", "publishDate": "2026-10-30" },
+    { "url": "https://consumer-protection.example/alerts/northwind-freight-job-offers", "type": "Authority", "publishDate": "2026-10-21" },
+    { "url": "https://jobseekers-forum.example/t/northwind-freight-offer-letter", "type": "Report", "publishDate": "2026-10-18" },
+    { "url": "https://business-directory.example/company/northwind-freight", "type": "Directory", "publishDate": null },
+    { "url": "https://career-safety.example/how-to-spot-fake-recruiters", "type": "General advice", "publishDate": "2025-05-02" }
+  ],
+  "officialDomain": "northwindfreight.example",
+  "nextStep": {
+    "url": "https://www.northwindfreight.example/recruiting-fraud",
+    "kind": "fraud"
+  },
+  "senderDomain": "northwind-freight.example",
+  "lookalike": {
+    "sender": "northwind-freight.example",
+    "imitates": "northwindfreight.example"
+  },
+  "searches": [
+    "Northwind Freight official website careers",
+    "Northwind Freight recruiting fraud notice email",
+    "Northwind Freight recruitment fraud",
+    "Northwind Freight job scam",
+    "northwind-freight.example recruiter scam"
+  ]
+}

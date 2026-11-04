@@ -1,0 +1,46 @@
+{
+  "status": "ok",
+  "companyName": "Brightline Ventures",
+  "checkedAt": "2026-11-03T15:50:00.000Z",
+  "verdict": "not_enough",
+  "subtitle": null,
+  "companySays": null,
+  "reasons": [
+    {
+      "direction": "neutral",
+      "text": "No official domain for Brightline Ventures was found to compare brightline-careers.example with.",
+      "sourceType": "Other",
+      "sourceUrl": null,
+      "age": "Date unknown"
+    },
+    {
+      "direction": "neutral",
+      "text": "trust-score.example has an automated rating page; automated scores are not a verdict.",
+      "sourceType": "Automated rating",
+      "sourceUrl": "https://trust-score.example/site/brightline-careers.example",
+      "age": "Date unknown"
+    }
+  ],
+  "couldntFind": [
+    {
+      "kind": "not_published",
+      "text": "No official website for Brightline Ventures was found.",
+      "url": null
+    }
+  ],
+  "sources": [
+    { "url": "https://trust-score.example/site/brightline-careers.example", "type": "Automated rating", "publishDate": null },
+    { "url": "https://news-digest.example/2025/brightline-names", "type": "Other", "publishDate": "2025-03-19" }
+  ],
+  "officialDomain": null,
+  "nextStep": null,
+  "senderDomain": "brightline-careers.example",
+  "lookalike": null,
+  "searches": [
+    "Brightline Ventures official website careers",
+    "Brightline Ventures recruiting fraud notice email",
+    "Brightline Ventures recruitment fraud",
+    "Brightline Ventures job scam",
+    "brightline-careers.example recruiter scam"
+  ]
+}

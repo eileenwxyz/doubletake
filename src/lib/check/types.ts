@@ -57,8 +57,15 @@ export type Source = {
   publishDate: string | null;
 };
 
+export type NextStepKind = "fraud" | "careers" | "site";
+
 export type CheckReport = {
   status: "ok";
+  // The company's proper name, for display.
+  companyName: string;
+  // When the check ran (ISO 8601, UTC). The page shows it in the visitor's
+  // time zone.
+  checkedAt: string;
   verdict: Verdict;
   subtitle: string | null;
   companySays: { quote: string; domain: string } | null;
@@ -66,6 +73,16 @@ export type CheckReport = {
   couldntFind: CouldntFind[];
   sources: Source[];
   officialDomain: string | null;
+  // The one link the page puts first: the company's recruiting fraud page,
+  // else its careers page, else its website. Null without an official domain.
+  nextStep: { url: string; kind: NextStepKind } | null;
+  // The sender's domain when a recruiter email was given (never the full
+  // address).
+  senderDomain: string | null;
+  // Set when the sender's domain is a near-copy of a company domain.
+  lookalike: { sender: string; imitates: string } | null;
+  // The exact search queries that ran.
+  searches: string[];
 };
 
 export type NeedMoreDetail = {
@@ -74,3 +91,11 @@ export type NeedMoreDetail = {
 };
 
 export type CheckResponse = CheckReport | NeedMoreDetail;
+
+// What POST /api/check returns on success: the check plus how many checks
+// the visitor has left today (null when limits are off, as in local
+// development).
+export type CheckApiResponse = CheckResponse & { checksRemaining: number | null };
+
+// What POST /api/check returns on failure. limit is set on 429 responses.
+export type CheckApiError = { error: string; limit?: "daily" | "monthly" };

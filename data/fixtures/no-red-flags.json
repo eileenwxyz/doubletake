@@ -1,0 +1,56 @@
+{
+  "status": "ok",
+  "companyName": "Tidewater Health",
+  "checkedAt": "2026-11-03T15:47:00.000Z",
+  "verdict": "no_red_flags",
+  "subtitle": "Scammers have used this name.",
+  "companySays": {
+    "quote": "Our recruiters only contact candidates from @tidewaterhealth.example email addresses. We never ask for payment during hiring.",
+    "domain": "tidewaterhealth.example"
+  },
+  "reasons": [
+    {
+      "direction": "reassures",
+      "text": "The sender's domain tidewaterhealth.example is on the recruiting list Tidewater Health publishes on tidewaterhealth.example.",
+      "sourceType": "Official",
+      "sourceUrl": "https://www.tidewaterhealth.example/careers/candidate-safety",
+      "age": "Published 2026-06-10 (4 months ago)"
+    },
+    {
+      "direction": "reassures",
+      "text": "tidewaterhealth.example is Tidewater Health's official website.",
+      "sourceType": "Official",
+      "sourceUrl": "https://www.tidewaterhealth.example/",
+      "age": "Date unknown"
+    },
+    {
+      "direction": "reassures",
+      "text": "Tidewater Health has a company listing on business-directory.example.",
+      "sourceType": "Directory",
+      "sourceUrl": "https://business-directory.example/company/tidewater-health",
+      "age": "Date unknown"
+    }
+  ],
+  "couldntFind": [],
+  "sources": [
+    { "url": "https://www.tidewaterhealth.example/", "type": "Official", "publishDate": null },
+    { "url": "https://www.tidewaterhealth.example/careers/candidate-safety", "type": "Official", "publishDate": "2026-06-10" },
+    { "url": "https://www.tidewaterhealth.example/careers", "type": "Official", "publishDate": "2026-11-01" },
+    { "url": "https://business-directory.example/company/tidewater-health", "type": "Directory", "publishDate": null },
+    { "url": "https://jobseekers-forum.example/t/fake-tidewater-health-offer", "type": "Report", "publishDate": "2026-09-12" }
+  ],
+  "officialDomain": "tidewaterhealth.example",
+  "nextStep": {
+    "url": "https://www.tidewaterhealth.example/careers/candidate-safety",
+    "kind": "fraud"
+  },
+  "senderDomain": "tidewaterhealth.example",
+  "lookalike": null,
+  "searches": [
+    "Tidewater Health official website careers",
+    "Tidewater Health recruiting fraud notice email",
+    "Tidewater Health recruitment fraud",
+    "Tidewater Health job scam",
+    "tidewaterhealth.example recruiter scam"
+  ]
+}

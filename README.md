@@ -84,7 +84,11 @@ npm test
 - `src/lib/check/`: verdict rules, source types and domain lists
 - `src/lib/parallel.ts`: Parallel Search and Extract API calls
 - `tests/`: unit tests and fixtures (fictional companies on `.example` domains)
-- `data/fixtures/`: saved example API responses, for development and tests
+- `data/fixtures/`: saved example API responses (one per verdict), shown as
+  "Example" results on the empty page and used in tests
+- `src/lib/copy.ts`: every user-facing string
+- `src/app/globals.css`: every color, font and spacing value, as CSS variables
+- `docs/screenshots/`: phone-width screenshots of each screen state
 
 ## Environment variables and secrets
 
@@ -109,7 +113,9 @@ variables and only used on the server, so visitors never need a key or see it.
   month. Try again on the 1st."
   and Parallel is not called. Change the cap with `MONTHLY_CHECK_CAP`.
 
-Only checks that pass input validation count. Counters live in Upstash Redis
+Only checks that pass input validation count, and a check that fails or
+runs past 55 seconds is given back. Successful responses include
+`checksRemaining` so the page can show "N checks left today" at 3 or fewer. Counters live in Upstash Redis
 (added through the Vercel Marketplace). These server-side variables are needed:
 
 - `KV_REST_API_URL` and `KV_REST_API_TOKEN`: set by the Upstash integration
