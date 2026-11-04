@@ -1,13 +1,14 @@
 import {
+  ADVICE_SITES,
   AUTOMATED_RATING_SITES,
   REGULATORS,
-  REPORT_SITES,
 } from "./domain-lists";
 import {
   boardKey,
   hiringPlatform,
   isDirectory,
   isGovernment,
+  isReportSite,
   registrableDomain,
 } from "./domains";
 import { isQuestionPost, namesCompanyExactly } from "./text";
@@ -63,8 +64,9 @@ export function classifySource(
 
   if (AUTOMATED_RATING_SITES.has(domain)) return "Automated rating";
   if (isDirectory(url)) return "Directory";
+  if (ADVICE_SITES.has(domain)) return "General advice";
 
-  if (REPORT_SITES.has(domain)) {
+  if (isReportSite(url)) {
     if (!names) return "General advice";
     return isQuestionPost(title, text) ? "Other" : "Report";
   }

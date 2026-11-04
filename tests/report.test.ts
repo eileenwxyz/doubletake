@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildReport, formatAge } from "@/lib/check/report";
-import { findRecruitingList } from "@/lib/check/text";
+import { findRecruitingList, properName, tidyName } from "@/lib/check/text";
 import type { CheckReport } from "@/lib/check/types";
 import { acmeInput, acmeReads, hit, read, unreadable, withSender, NOW } from "./fixtures";
 
@@ -168,5 +168,48 @@ describe("recruiting list wording", () => {
         "Acme recruiters only contact candidates from acme.example or talentbridge-hiring.example.",
       )?.entries,
     ).toEqual(["acme.example", "talentbridge-hiring.example"]);
+  });
+});
+
+describe("the company's proper name", () => {
+  const nimbus = (titles: { home?: string | null; careers?: string | null } = {}) =>
+    withSender("recruiter@nimbuslabs.example", {
+      company: "nimbus labs",
+      website: "nimbuslabs.example",
+      officialHits: [
+        hit("https://nimbuslabs.example/", titles.home ?? null, "NimbusLabs builds cloud tools."),
+        hit("https://nimbuslabs.example/careers", titles.careers ?? null, "Join NimbusLabs."),
+      ],
+      reads: [
+        { ...read("https://nimbuslabs.example/", "home", `# NimbusLabs\n\n${"NimbusLabs builds cloud tools. ".repeat(10)}`), title: titles.home ?? null },
+        { ...read("https://nimbuslabs.example/careers", "careers", `# Careers\n\n${"Join NimbusLabs. ".repeat(15)}`), title: titles.careers ?? null },
+      ],
+    });
+
+  it("uses the name from the official site's page titles in reasons", () => {
+    const r = ok(nimbus({ home: "NimbusLabs | Cloud tools", careers: "Careers at NimbusLabs" }));
+    expect(r.reasons[0].text).toBe(
+      "The sender's domain nimbuslabs.example belongs to NimbusLabs's official domain nimbuslabs.example.",
+    );
+    expect(JSON.stringify(r)).not.toContain("nimbus labs");
+  });
+
+  it("falls back to the typed name with its capitalisation tidied", () => {
+    const r = ok(nimbus());
+    expect(r.reasons[0].text).toContain("Nimbus Labs's official domain");
+    const none = ok(acmeInput({ company: "globex   robotics", officialHits: [], reads: [] }));
+    expect(none.couldntFind).toContainEqual(
+      expect.objectContaining({ text: "No official website for Globex Robotics was found." }),
+    );
+  });
+
+  it("picks the spelling titles agree on and ignores other names", () => {
+    expect(properName("att", ["AT&T Careers", "Home | AT&T", "Contact us"])).toBe("AT&T");
+    expect(properName("acme", ["Careers at ACME", "Acme | Home", "Acme: news"])).toBe("Acme");
+    expect(properName("acme", ["Acme Robotics, Inc. | Home"])).toBe("Acme");
+    expect(properName("acme", ["Globex | Home", null])).toBe("Acme");
+    expect(tidyName("eBay")).toBe("eBay");
+    expect(tidyName("IBM")).toBe("IBM");
+    expect(tidyName("  acme   robotics ")).toBe("Acme Robotics");
   });
 });

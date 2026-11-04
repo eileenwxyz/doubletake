@@ -1,10 +1,18 @@
 import {
+  AGES,
+  COULDNT_FIND,
+  NEED_MORE_DETAIL_MESSAGE,
+  REASONS,
+  SUBTITLES,
+} from "@/lib/copy";
+import { DEFAULT_LOCALE } from "./domain-lists";
+import {
   boardKey,
   dedupeByUrl,
   hiringPlatform,
   isFreeEmailProvider,
   isPersonalUrl,
-  normalizeUrl,
+  pageKey,
   registrableDomain,
 } from "./domains";
 import { findOfficialDomain } from "./official";
@@ -19,10 +27,11 @@ import {
   linksIn,
   mentionsDomain,
   namesCompanyExactly,
+  properName,
+  tidyName,
   type RecruitingList,
 } from "./text";
 import {
-  NEED_MORE_DETAIL_MESSAGE,
   type CheckResponse,
   type CouldntFind,
   type Direction,
@@ -44,14 +53,10 @@ export type CheckInput = {
   warningHits: SearchHit[];
   reads: PageRead[];
   now: Date;
+  // The user's language and region ("en-us"); picks which copy of a
+  // localised page to keep.
+  locale?: string;
 };
-
-export const SUBTITLES = {
-  companyOnly: "Company-only check: no recruiter email was given.",
-  pagesUnchecked: "Some pages couldn't be checked.",
-  scammersUsedName: "Scammers have used this name.",
-  notCompanyChannel: "This address is not one of the company's channels.",
-} as const;
 
 const MAX_REASONS = 3;
 // Fewer distinct pieces of evidence than this beyond the domain itself is
@@ -71,17 +76,17 @@ type Candidate = Omit<Reason, "age"> & { priority: number };
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export function formatAge(publishDate: string | null, now: Date): string {
-  if (!publishDate) return "Date unknown";
+  if (!publishDate) return AGES.unknown;
   const date = new Date(`${publishDate.slice(0, 10)}T00:00:00Z`);
-  if (Number.isNaN(date.getTime())) return "Date unknown";
+  if (Number.isNaN(date.getTime())) return AGES.unknown;
   const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
   const days = Math.round((today - date.getTime()) / DAY_MS);
   const day = publishDate.slice(0, 10);
-  if (days < 0) return `Published ${day}`;
-  if (days === 0) return `Published ${day} (today)`;
-  if (days < 60) return `Published ${day} (${days} day${days === 1 ? "" : "s"} ago)`;
-  if (days < 730) return `Published ${day} (${Math.floor(days / 30)} months ago)`;
-  return `Published ${day} (${Math.floor(days / 365)} years ago)`;
+  if (days < 0) return AGES.future(day);
+  if (days === 0) return AGES.today(day);
+  if (days < 60) return AGES.days(day, days);
+  if (days < 730) return AGES.months(day, Math.floor(days / 30));
+  return AGES.years(day, Math.floor(days / 365));
 }
 
 function officialLinks(reads: PageRead[], officialDomain: string) {
@@ -109,6 +114,7 @@ function officialLinks(reads: PageRead[], officialDomain: string) {
 
 export function buildReport(input: CheckInput): CheckResponse {
   const { company, now } = input;
+  const locale = input.locale ?? DEFAULT_LOCALE;
   const found = findOfficialDomain(
     company,
     input.website,
@@ -163,13 +169,13 @@ export function buildReport(input: CheckInput): CheckResponse {
 
   // All evidence, one entry per distinct URL. Full text replaces excerpts
   // when the page was read; a failed read keeps the search excerpt.
-  const readsByUrl = new Map(input.reads.map((r) => [normalizeUrl(r.url), r]));
+  const readsByUrl = new Map(input.reads.map((r) => [pageKey(r.url), r]));
   const raw: Array<Omit<Evidence, "type">> = [
     ...input.officialHits,
     ...input.warningHits,
     ...input.reads.map((r) => ({ ...r, text: "" })),
   ].map((item) => {
-    const read = readsByUrl.get(normalizeUrl(item.url));
+    const read = readsByUrl.get(pageKey(item.url));
     return {
       url: item.url,
       title: read?.title ?? item.title,
@@ -177,11 +183,20 @@ export function buildReport(input: CheckInput): CheckResponse {
       text: read?.ok ? read.text : item.text,
     };
   });
-  const evidence: Evidence[] = dedupeByUrl(raw)
+  const evidence: Evidence[] = dedupeByUrl(raw, locale)
     .filter((e) => !isPersonalUrl(e.url))
     .map((e) => ({ ...e, type: classifySource(e.url, e.title, e.text, ctx) }));
 
   const official = evidence.filter((e) => e.type === "Official");
+
+  // The company's proper name as its own site writes it, for display only;
+  // matching keeps using what the user typed.
+  const name = officialDomain
+    ? properName(company, [
+        ...[...readOk].sort((a, b) => roleOrder(a.role) - roleOrder(b.role)).map((r) => r.title),
+        ...official.map((e) => e.title),
+      ])
+    : tidyName(company);
   const firstOfficialUrl =
     readOk[0]?.url ?? official[0]?.url ?? (officialDomain ? `https://${officialDomain}/` : null);
 
@@ -218,7 +233,7 @@ export function buildReport(input: CheckInput): CheckResponse {
   );
 
   const corroboration =
-    new Set([...official, ...readOk].map((e) => normalizeUrl(e.url))).size + directories.length;
+    new Set([...official, ...readOk].map((e) => pageKey(e.url))).size + directories.length;
   const thin = !officialDomain || corroboration < MIN_EVIDENCE;
   const anyUnread = input.reads.some((r) => !r.ok);
 
@@ -277,7 +292,7 @@ export function buildReport(input: CheckInput): CheckResponse {
   ) => {
     const type =
       sourceType ??
-      (sourceUrl ? evidence.find((e) => normalizeUrl(e.url) === normalizeUrl(sourceUrl))?.type : undefined) ??
+      (sourceUrl ? evidence.find((e) => pageKey(e.url) === pageKey(sourceUrl))?.type : undefined) ??
       (sourceUrl && officialDomain && registrableDomain(sourceUrl) === officialDomain
         ? "Official"
         : "Other");
@@ -290,72 +305,75 @@ export function buildReport(input: CheckInput): CheckResponse {
     const listHost = list ? displayHost(list.url) : "";
     switch (sender.case) {
       case "on_list":
-        add(0, "reassures", `The sender's domain ${d} is on the recruiting list ${company} publishes on ${listHost}.`, list!.url, "Official");
+        add(0, "reassures", REASONS.onList(d, name, listHost), list!.url, "Official");
         break;
       case "controlled_no_list":
-        add(0, "reassures", `The sender's domain ${d} belongs to ${company}'s official domain ${o}.`, firstOfficialUrl, "Official");
+        add(0, "reassures", REASONS.controlledNoList(d, name, o), firstOfficialUrl, "Official");
         break;
       case "controlled_not_on_list":
-        add(0, "caution", `The sender's domain ${d} belongs to ${o}, but it is not on the recruiting list ${company} publishes.`, list!.url, "Official");
+        add(0, "caution", REASONS.controlledNotOnList(d, name, o), list!.url, "Official");
         break;
       case "controlled_unread":
-        add(0, "reassures", `The sender's domain ${d} belongs to ${o}, but ${company}'s recruiting pages couldn't be read, so this check is incomplete.`, firstOfficialUrl, "Official");
+        add(0, "reassures", REASONS.controlledUnread(d, name, o), firstOfficialUrl, "Official");
         break;
       case "lookalike":
         if (sender.imitates && sender.imitates !== o) {
-          add(0, "caution", `The sender's domain ${d} imitates ${sender.imitates}, a recruiting domain ${company} publishes.`, list?.url ?? firstOfficialUrl, "Official");
+          add(0, "caution", REASONS.imitatesListed(d, name, sender.imitates), list?.url ?? firstOfficialUrl, "Official");
         } else {
-          add(0, "caution", `The sender's domain ${d} imitates ${company}'s official domain ${o}.`, firstOfficialUrl, "Official");
+          add(0, "caution", REASONS.imitatesOfficial(d, name, o), firstOfficialUrl, "Official");
         }
         break;
       case "hiring_linked":
-        add(0, "neutral", `${d} is ${sender.platform} hiring software, and ${company}'s own site links to ${sender.platform}.`, links.platformPage.get(sender.platform!) ?? firstOfficialUrl, "Official");
+        add(0, "neutral", REASONS.hiringLinked(d, name, sender.platform!), links.platformPage.get(sender.platform!) ?? firstOfficialUrl, "Official");
         break;
       case "hiring_unlinked":
-        add(0, "caution", `${d} is ${sender.platform} hiring software, but ${company}'s own site doesn't link to ${sender.platform}.`, firstOfficialUrl, "Official");
+        add(0, "caution", REASONS.hiringUnlinked(d, name, sender.platform!), firstOfficialUrl, "Official");
         break;
       case "free_with_domain":
-        add(0, "caution", `${d} is a free email service, but ${company} has its own domain, ${o}.`, firstOfficialUrl, "Official");
+        add(0, "caution", REASONS.freeWithDomain(d, name, o), firstOfficialUrl, "Official");
         break;
       case "free_no_domain":
-        add(0, "caution", `${d} is a free email service, and no company domain was found to compare it with.`, null, "Other");
+        add(0, "caution", REASONS.freeNoDomain(d), null, "Other");
         break;
       case "unrelated":
-        add(0, "caution", `The sender's domain ${d} is not connected to ${company}'s official domain ${o}.`, firstOfficialUrl, "Official");
+        add(0, "caution", REASONS.unrelated(d, name, o), firstOfficialUrl, "Official");
         break;
       case "unrelated_unread":
-        add(0, "caution", `The sender's domain ${d} is not connected to ${company}'s official domain ${o}, and some of ${company}'s pages couldn't be read to check for other recruiting domains.`, firstOfficialUrl, "Official");
+        add(0, "caution", REASONS.unrelatedUnread(d, name, o), firstOfficialUrl, "Official");
         break;
       case "unknown_company":
-        add(0, "neutral", `No official domain for ${company} was found to compare ${d} with.`, null, "Other");
+        add(0, "neutral", REASONS.unknownCompany(d, name), null, "Other");
         break;
     }
   }
 
   for (const w of authorityWarnings) {
-    add(1, "caution", `A page on ${displayHost(w.url)} warns about ${company} by name.`, w.url);
+    add(1, "caution", REASONS.authorityWarning(displayHost(w.url), name), w.url);
   }
   for (const w of warnings.filter((e) => e.type !== "Authority")) {
-    const what = w.type === "Report" ? "A post on" : "A page on";
-    add(2, "caution", `${what} ${displayHost(w.url)} reports a problem involving ${company} by name.`, w.url);
+    const text =
+      w.type === "Report"
+        ? REASONS.reportWarning(displayHost(w.url), name)
+        : REASONS.pageWarning(displayHost(w.url), name);
+    add(2, "caution", text, w.url);
   }
   for (const w of senderWarnings) {
-    add(2, "caution", `A page on ${displayHost(w.url)} names ${input.senderDomain} in a scam warning.`, w.url);
+    add(2, "caution", REASONS.senderWarning(displayHost(w.url), input.senderDomain!), w.url);
   }
   if (list) {
-    add(3, "reassures", `${company} publishes the email domains its recruiters use: ${list.entries.map((e) => e.split("@").pop()).filter((v, i, a) => a.indexOf(v) === i).join(", ")}.`, list.url, "Official");
+    add(3, "reassures", REASONS.publishesList(name, list.entries.map((e) => e.split("@").pop()).filter((v, i, a) => a.indexOf(v) === i).join(", ")), list.url, "Official");
   }
   if (fraudNotice) {
-    add(3, "neutral", `${company} publishes a recruiting fraud notice on its own site.`, fraudNotice.url, "Official");
+    add(3, "neutral", REASONS.fraudNotice(name), fraudNotice.url, "Official");
   }
   if (officialDomain && official.length) {
-    add(4, "reassures", `${officialDomain} is ${company}'s official website.`, official[0].url, "Official");
+    add(4, "reassures", REASONS.officialSite(officialDomain, name), official[0].url, "Official");
   }
   for (const e of directories) {
-    add(5, "reassures", `${company} has a company listing on ${displayHost(e.url)}.`, e.url);
+    add(5, "reassures", REASONS.directoryListing(name, displayHost(e.url)), e.url);
   }
   for (const e of evidence.filter((x) => x.type === "Automated rating")) {
-    add(6, "neutral", `${displayHost(e.url)} has an automated rating page; automated scores are not a verdict.`, e.url);
+    add(6, "neutral", REASONS.automatedRating(displayHost(e.url)), e.url);
   }
 
   const seen = new Set<string>();
@@ -363,7 +381,7 @@ export function buildReport(input: CheckInput): CheckResponse {
     .sort((a, b) => a.priority - b.priority)
     .filter((c) => {
       if (!c.sourceUrl) return true;
-      const key = normalizeUrl(c.sourceUrl);
+      const key = pageKey(c.sourceUrl);
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
@@ -371,35 +389,35 @@ export function buildReport(input: CheckInput): CheckResponse {
     .slice(0, MAX_REASONS)
     .map(({ direction, text, sourceType, sourceUrl }) => {
       const match = sourceUrl
-        ? evidence.find((e) => normalizeUrl(e.url) === normalizeUrl(sourceUrl))
+        ? evidence.find((e) => pageKey(e.url) === pageKey(sourceUrl))
         : undefined;
       return { direction, text, sourceType, sourceUrl, age: formatAge(match?.publishDate ?? null, now) };
     });
 
   // ---- Couldn't find ----
-  const couldntFind: CouldntFind[] = dedupeByUrl(input.reads.filter((r) => !r.ok)).map((r) => ({
+  const couldntFind: CouldntFind[] = dedupeByUrl(input.reads.filter((r) => !r.ok), locale).map((r) => ({
     kind: "couldnt_check",
-    text: `Couldn't read ${displayHost(r.url)}${pathLabel(r.url)}.`,
+    text: COULDNT_FIND.couldntRead(`${displayHost(r.url)}${pathLabel(r.url)}`),
     url: r.url,
   }));
   if (!officialDomain) {
     couldntFind.push({
       kind: "not_published",
-      text: `No official website for ${company} was found.`,
+      text: COULDNT_FIND.noOfficialSite(name),
       url: null,
     });
   } else if (readOk.length) {
     if (!list) {
       couldntFind.push({
         kind: "not_published",
-        text: `${company} doesn't say which email domains its recruiters use on the pages checked.`,
+        text: COULDNT_FIND.noRecruitingList(name),
         url: null,
       });
     }
     if (!fraudNotice && (input.senderDomain || warnings.length)) {
       couldntFind.push({
         kind: "not_published",
-        text: `${company} doesn't publish a recruiting fraud notice on the pages checked.`,
+        text: COULDNT_FIND.noFraudNotice(name),
         url: null,
       });
     }
@@ -422,6 +440,10 @@ export function buildReport(input: CheckInput): CheckResponse {
     sources,
     officialDomain,
   };
+}
+
+function roleOrder(role: PageRead["role"]): number {
+  return ["home", "careers", "fraud", "warning"].indexOf(role);
 }
 
 function pathLabel(url: string): string {

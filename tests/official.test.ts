@@ -3,6 +3,8 @@ import {
   dedupeByUrl,
   isLookalike,
   normalizeUrl,
+  pageKey,
+  preferredLocale,
   registrableDomain,
 } from "@/lib/check/domains";
 import { findOfficialDomain, planReads } from "@/lib/check/official";
@@ -58,6 +60,81 @@ describe("duplicate URLs", () => {
         { url: "https://acme.example/about" },
       ]),
     ).toHaveLength(2);
+  });
+
+  it("strips inav and intlink parameters", () => {
+    expect(normalizeUrl("https://acme.example/careers?inav=menu&intlink=footer")).toBe(
+      normalizeUrl("https://acme.example/careers"),
+    );
+    expect(normalizeUrl("https://acme.example/careers?INAV=1&team=eng")).toBe(
+      normalizeUrl("https://acme.example/careers?team=eng"),
+    );
+  });
+
+  it("treats language and region copies of a page as one source", () => {
+    expect(pageKey("https://www.acme.example/en-us/careers/security")).toBe(
+      pageKey("https://acme.example/DE-DE/careers/security/"),
+    );
+    // A different remaining path is a different page.
+    expect(pageKey("https://acme.example/en-us/careers")).not.toBe(pageKey("https://acme.example/en-us/about"));
+    // Only a leading xx-yy segment is a locale.
+    expect(pageKey("https://acme.example/blog/en-us")).not.toBe(pageKey("https://acme.example/blog"));
+
+    const copies = [
+      { url: "https://acme.example/de-de/careers/security" },
+      { url: "https://acme.example/en-gb/careers/security" },
+      { url: "https://acme.example/en-us/careers/security?inav=nav" },
+      { url: "https://acme.example/about" },
+    ];
+    // Defaults to en-us and keeps first-seen order.
+    expect(dedupeByUrl(copies).map((c) => c.url)).toEqual([
+      "https://acme.example/en-us/careers/security?inav=nav",
+      "https://acme.example/about",
+    ]);
+    expect(dedupeByUrl(copies, "en-gb")[0].url).toBe("https://acme.example/en-gb/careers/security");
+    expect(dedupeByUrl(copies, "de-de")[0].url).toBe("https://acme.example/de-de/careers/security");
+    // Same language, other region, before the default.
+    expect(dedupeByUrl(copies, "de-at")[0].url).toBe("https://acme.example/de-de/careers/security");
+  });
+
+  it("reads the user's locale from Accept-Language, defaulting to en-us", () => {
+    expect(preferredLocale("en-GB,en;q=0.9")).toBe("en-gb");
+    expect(preferredLocale("de-DE")).toBe("de-de");
+    expect(preferredLocale("fr")).toBe("en-us");
+    expect(preferredLocale(null)).toBe("en-us");
+  });
+
+  it("plans one read per localised page, in the user's locale", () => {
+    const hits = [
+      hit("https://acme.example/en-us/recruiting-fraud", "Recruiting fraud | Acme", "Acme"),
+      hit("https://acme.example/en-gb/recruiting-fraud", "Recruiting fraud | Acme", "Acme"),
+      hit("https://acme.example/de-de/recruiting-fraud", "Recruiting fraud | Acme", "Acme"),
+    ];
+    expect(planReads("Acme", "acme.example", hits, [])).toEqual([
+      { url: "https://acme.example/en-us/recruiting-fraud", role: "fraud" },
+    ]);
+    expect(planReads("Acme", "acme.example", hits, [], "en-gb")).toEqual([
+      { url: "https://acme.example/en-gb/recruiting-fraud", role: "fraud" },
+    ]);
+  });
+
+  it("lists localised copies once in a report's sources", () => {
+    const r = buildReport({
+      company: "Acme",
+      website: null,
+      senderAddress: null,
+      senderDomain: null,
+      officialHits: [
+        ...ACME_OFFICIAL_HITS,
+        hit("https://www.acme.example/en-gb/recruiting-fraud", "Recruiting fraud notice | Acme", "Acme"),
+        hit("https://www.acme.example/de-de/recruiting-fraud?intlink=1", "Recruiting fraud notice | Acme", "Acme"),
+      ],
+      warningHits: [],
+      reads: [],
+      now: NOW,
+    });
+    if (r.status !== "ok") throw new Error("expected a report");
+    expect(r.sources.filter((s) => s.url.includes("recruiting-fraud"))).toHaveLength(1);
   });
 });
 
