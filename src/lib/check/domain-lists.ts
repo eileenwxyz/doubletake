@@ -87,10 +87,10 @@ export const DIRECTORIES: ReadonlyArray<SitePages> = [
   { domain: "tracxn.com" },
   { domain: "crunchbase.com" },
   // Employee reviews, interview and salary pages: about working at the
-  // company, not scam reports.
+  // company, not scam reports. Overview pages are the company's own listing.
   ...["glassdoor.com", "glassdoor.co.uk", "glassdoor.ca"].map((domain) => ({
     domain,
-    pathPattern: /^\/(reviews|interview|salary|salaries)\//,
+    pathPattern: /^\/(overview|reviews|interview|salary|salaries)\//,
   })),
 ];
 

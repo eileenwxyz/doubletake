@@ -114,6 +114,30 @@ export function properName(company: string, titles: ReadonlyArray<string | null>
   return best ?? tidyName(company);
 }
 
+// A site's name from its page titles when only its domain is known: the
+// title part that contains the domain's name ("Brightpath Staffing" in
+// "Brightpath Staffing | Staffing agency" for brightpath.example), most
+// common first. Null when no title part does.
+export function properNameFromTitles(label: string, titles: ReadonlyArray<string | null>): string | null {
+  const target = label.toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (target.length < 3) return null;
+  const votes = new Map<string, number>();
+  for (const title of titles) {
+    for (const part of (title ?? "").split(TITLE_PARTS)) {
+      const clean = stripCorporateSuffix(part).replace(/[\s,]+$/, "").replace(/\s+/g, " ");
+      if (clean.length < 2 || clean.length > 60) continue;
+      if (!compactName(clean).includes(target)) continue;
+      votes.set(clean, (votes.get(clean) ?? 0) + 1);
+      break;
+    }
+  }
+  let best: string | null = null;
+  for (const [name, count] of votes) {
+    if (best === null || count > (votes.get(best) ?? 0)) best = name;
+  }
+  return best;
+}
+
 const WARNING_WORDS =
   /\b(scam|scams|scammer|scammers|scammed|fraud|fraudulent|fake|impersonat\w*|phishing|beware|stole|stolen)\b/i;
 
@@ -192,7 +216,15 @@ export type RecruitingList = {
 
 const CONTACT_WORDS = /(\b(e-?mails?|domains?|address(es)?|contact\w*|reach out)\b|@)/i;
 const RECRUIT_WORDS = /(recruit|candidate|applicant|hiring|talent|job seeker|interview)/i;
-const LIMIT_WORDS = /\b(only|exclusively|verified|official|always|solely)\b/i;
+const LIMIT_WORDS =
+  /\b(only|exclusively|verified|official|always|solely|legitimate|genuine|authentic)\b/i;
+// "Emails from our recruiters come from ...", "will be sent from ...",
+// "end in ...": saying where the emails come from limits them too.
+const SOURCE_PHRASE = /\b(?:come|comes|coming|be sent|are sent|is sent|originate|originates) from\b|\bends? (?:in|with)\b/i;
+// How far back a recruiting word may be for a sentence that doesn't name
+// recruiting itself ("Globex will only contact you from ...", under a
+// "Recruiting scams" heading).
+const CONTEXT_LINES = 3;
 const NEGATION = /\b(never|not|don't|do not|won't|will not)\b/i;
 const MAX_QUOTE = 220;
 
@@ -236,11 +268,15 @@ export function findRecruitingList(markdown: string): RecruitingList | null {
 
   for (let i = 0; i < lines.length; i++) {
     const sentences = lines[i].split(/(?<=[.!?])\s+(?=[A-Z])/);
+    // The lines just above, and the sentences before this one on its line.
+    let context = lines.slice(Math.max(0, i - CONTEXT_LINES), i).join(" ");
     for (const sentence of sentences) {
+      const recruiting = RECRUIT_WORDS.test(sentence) || RECRUIT_WORDS.test(context);
+      context += ` ${sentence}`;
       if (
         !CONTACT_WORDS.test(sentence) ||
-        !RECRUIT_WORDS.test(sentence) ||
-        !LIMIT_WORDS.test(sentence)
+        !recruiting ||
+        !(LIMIT_WORDS.test(sentence) || SOURCE_PHRASE.test(sentence))
       ) {
         continue;
       }

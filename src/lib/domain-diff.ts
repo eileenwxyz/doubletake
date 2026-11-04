@@ -2,7 +2,8 @@
 // side-by-side view: which characters differ, and a sentence describing the
 // difference that a screen reader can read.
 
-import { DIFF } from "@/lib/copy";
+import { DIFF, LOOKALIKE_CHARS } from "@/lib/copy";
+import { lookalikeChar, toUnicodeDomain } from "@/lib/lookalike-chars";
 
 export type Segment = { text: string; changed: boolean };
 
@@ -21,8 +22,11 @@ function segments(...parts: Array<[string, boolean]>): Segment[] {
 }
 
 export function diffDomains(senderDomain: string, officialDomain: string): DomainDiff {
-  const a = senderDomain.toLowerCase();
-  const b = officialDomain.toLowerCase();
+  // Punycode (xn--) is shown as the characters it stands for.
+  const a = toUnicodeDomain(senderDomain).toLowerCase();
+  const b = toUnicodeDomain(officialDomain).toLowerCase();
+  // A character from another script, or "rn" for "m", is named outright.
+  const odd = lookalikeChar(a, b);
 
   if (a === b) {
     return { sender: segments([a, false]), official: segments([b, false]), description: DIFF.same };
@@ -63,7 +67,9 @@ export function diffDomains(senderDomain: string, officialDomain: string): Domai
   const removed = b.slice(start, b.length - end);
 
   let description: string;
-  if (removed === "") {
+  if (odd) {
+    description = DIFF.lookalike(LOOKALIKE_CHARS.describe(odd));
+  } else if (removed === "") {
     description = added.length === 1 ? DIFF.extraChar(DIFF.charNoun(added)) : DIFF.extraText(added);
   } else if (added === "") {
     description =

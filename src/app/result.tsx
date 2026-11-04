@@ -48,6 +48,13 @@ export default function Result({
     verdictRef.current?.focus();
   }, [report]);
 
+  // A staffing agency and the client it names: the header names both.
+  const agency = report.recruitingFor ?? null;
+  const heading = agency ? RESULT.recruitingFor(agency.agency, agency.client) : report.companyName;
+  const domains = (
+    agency ? [agency.agencyDomain, agency.clientDomain] : [report.officialDomain]
+  ).filter((d, i, all): d is string => d !== null && all.indexOf(d) === i);
+
   const cited = citedSources(report.reasons);
   const groups = groupSources(report.sources);
   const topGroups = groupReasons(report.reasons, report.verdict);
@@ -65,19 +72,24 @@ export default function Result({
   };
 
   return (
-    <article className="result" aria-label={report.companyName}>
+    <article className="result" aria-label={heading}>
       {/* 1. Header */}
       <header className="result-head">
         {isExample && <p className="badge">{RESULT.example}</p>}
-        <h1 className="company">{report.companyName}</h1>
+        <h1 className="company">{heading}</h1>
         {report.job?.site && (
           <p className="result-meta posted-on">
             <WithDomains text={RESULT.postedOn(report.job.site)} />
           </p>
         )}
-        {report.officialDomain && (
+        {domains.length > 0 && (
           <p className="company-domain">
-            <Mono>{report.officialDomain}</Mono>
+            {domains.map((domain, index) => (
+              <span key={domain}>
+                {index > 0 && <span aria-hidden="true"> · </span>}
+                <Mono>{domain}</Mono>
+              </span>
+            ))}
           </p>
         )}
         <p className="result-meta">
@@ -112,19 +124,8 @@ export default function Result({
         </p>
       </section>
 
-      {/* 3. Primary next step */}
-      {report.nextStep && (
-        <a className="next-step" href={report.nextStep.url} rel="noopener noreferrer">
-          <span className="next-step-kicker">{RESULT.nextStepLabel}</span>
-          <span className="next-step-label">
-            {RESULT.nextStep[report.nextStep.kind](report.companyName)}
-            <ArrowIcon />
-          </span>
-          <span className="next-step-url">
-            <Mono>{shortUrl(report.nextStep.url)}</Mono>
-          </span>
-        </a>
-      )}
+      {/* 3. Primary next step: a page to open, or something to ask */}
+      {report.nextStep && <NextStep report={report} step={report.nextStep} />}
 
       {/* 4. The company says */}
       {report.companySays && (
@@ -259,7 +260,7 @@ export default function Result({
                   {group.sources.map((source) => (
                     <li key={source.url}>
                       <a href={source.url} rel="noopener noreferrer" className="source-link">
-                        <Mono>{shortUrl(source.url)}</Mono>
+                        {source.label ?? <Mono>{shortUrl(source.url)}</Mono>}
                       </a>
                       {source.publishDate && (
                         <span className="source-date"> · {source.publishDate.slice(0, 10)}</span>
@@ -312,8 +313,8 @@ function ReasonItem({
   maxLinks?: number;
   onShowAll?: () => void;
 }) {
-  const all = [
-    { url: reason.sourceUrl, sourceType: reason.sourceType, age: reason.age },
+  const all: Array<{ url: string | null; sourceType: Reason["sourceType"]; age: string; label?: string }> = [
+    { url: reason.sourceUrl, sourceType: reason.sourceType, age: reason.age, label: reason.sourceLabel },
     ...(reason.alsoFrom ?? []),
   ];
   const cap = maxLinks !== undefined && onShowAll && all.length > maxLinks ? maxLinks : all.length;
@@ -332,7 +333,7 @@ function ReasonItem({
           <span aria-hidden="true"> · </span>
           {source.url ? (
             <a href={source.url} rel="noopener noreferrer" className="source-link">
-              <Mono>{shortUrl(source.url)}</Mono>
+              {source.label ?? <Mono>{shortUrl(source.url)}</Mono>}
             </a>
           ) : (
             <span>{RESULT.noSourceLink}</span>
@@ -347,5 +348,43 @@ function ReasonItem({
         </p>
       )}
     </li>
+  );
+}
+
+// The one step the page puts first. A page to open is a link; something to
+// ask the recruiter is shown as text.
+function NextStep({
+  report,
+  step,
+}: {
+  report: CheckReport;
+  step: NonNullable<CheckReport["nextStep"]>;
+}) {
+  const label = RESULT.nextStep[step.kind](report.companyName, step.domain ?? report.officialDomain ?? "");
+  if (!step.url) {
+    return (
+      <div className="next-step next-step--ask">
+        <span className="next-step-kicker">{RESULT.nextStepLabel}</span>
+        <span className="next-step-label">
+          <span>
+            <WithDomains text={label} />
+          </span>
+        </span>
+      </div>
+    );
+  }
+  return (
+    <a className="next-step" href={step.url} rel="noopener noreferrer">
+      <span className="next-step-kicker">{RESULT.nextStepLabel}</span>
+      <span className="next-step-label">
+        <span>
+          <WithDomains text={label} />
+        </span>
+        <ArrowIcon />
+      </span>
+      <span className="next-step-url">
+        <Mono>{shortUrl(step.url)}</Mono>
+      </span>
+    </a>
   );
 }

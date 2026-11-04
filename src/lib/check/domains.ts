@@ -12,6 +12,7 @@ import {
   TRACKING_PARAMS,
   type SitePages,
 } from "./domain-lists";
+import { skeleton, toUnicodeDomain } from "@/lib/lookalike-chars";
 
 // Private Public Suffix List entries (vercel.app, github.io, ...) count as
 // suffixes, so acme.vercel.app is its own registrable domain and is not
@@ -131,6 +132,28 @@ export function isPersonalUrl(url: string): boolean {
   );
 }
 
+// The company's Glassdoor overview page for one of its review, interview or
+// salary pages, or null when the address doesn't carry the company's
+// Glassdoor ID (a single review's own page doesn't):
+// glassdoor.com/Reviews/Acme-Reviews-E12345.htm ->
+// glassdoor.com/Overview/Working-at-Acme-EI_IE12345.11,15.htm
+export function glassdoorOverviewUrl(url: string): string | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  const match =
+    /^\/(?:Reviews|Interview|Salary|Salaries)\/([A-Za-z0-9-]+?)-(?:Reviews|Interview-Questions|Interviews|Salaries|Salary)-E(\d+)(?:[_.][^/]*)?$/i.exec(
+      parsed.pathname,
+    );
+  if (!match) return null;
+  const [, slug, id] = match;
+  const start = "Working-at-".length;
+  return `https://${parsed.hostname}/Overview/Working-at-${slug}-EI_IE${id}.${start},${start + slug.length}.htm`;
+}
+
 // Identifies one company's board on a shared hiring platform:
 // jobs.lever.co/acme and jobs.lever.co/acme/123 share "jobs.lever.co/acme".
 // Greenhouse's two board hosts and its embed links
@@ -182,13 +205,105 @@ export function localeOf(url: string): string | null {
   }
 }
 
+// Words in localised URL paths, in English, so that translated copies of a
+// page share a key: /de-de/karriere/betrug and /en-us/careers/fraud. Whole
+// path segments first, then single words of a hyphenated segment.
+const PATH_SEGMENTS: Readonly<Record<string, string>> = {
+  "werken-bij": "careers",
+  "arbeiten-bei": "careers",
+  "ueber-uns": "about",
+  "uber-uns": "about",
+  "a-propos": "about",
+  "sobre-nosotros": "about",
+  "chi-siamo": "about",
+  "over-ons": "about",
+  "lavora-con-noi": "careers",
+  "trabaja-con-nosotros": "careers",
+  "rejoignez-nous": "careers",
+  "offres-d-emploi": "jobs",
+  "offres-emploi": "jobs",
+  "ofertas-de-empleo": "jobs",
+};
+const PATH_WORDS: Readonly<Record<string, string>> = {
+  karriere: "careers",
+  karrieren: "careers",
+  carriere: "careers",
+  carrieres: "careers",
+  carreras: "careers",
+  carrera: "careers",
+  carreiras: "careers",
+  carriera: "careers",
+  stellenangebote: "jobs",
+  stellen: "jobs",
+  empleo: "jobs",
+  empleos: "jobs",
+  emploi: "jobs",
+  emplois: "jobs",
+  vagas: "jobs",
+  vacatures: "jobs",
+  lavoro: "jobs",
+  betrug: "fraud",
+  fraude: "fraud",
+  frode: "fraud",
+  truffa: "scam",
+  estafa: "scam",
+  arnaque: "scam",
+  arnaques: "scam",
+  oplichting: "fraud",
+  sicherheit: "security",
+  securite: "security",
+  seguridad: "security",
+  sicurezza: "security",
+  seguranca: "security",
+  kontakt: "contact",
+  contacto: "contact",
+  contatti: "contact",
+  contato: "contact",
+  recrutement: "recruiting",
+  reclutamiento: "recruiting",
+  reclutamento: "recruiting",
+  rekrutierung: "recruiting",
+  bewerbung: "apply",
+  candidature: "apply",
+  warnung: "warning",
+  hinweis: "notice",
+  avis: "notice",
+  aviso: "notice",
+  personalbeschaffung: "recruiting",
+};
+
+function translatePath(path: string): string {
+  let decoded = path;
+  try {
+    decoded = decodeURIComponent(path);
+  } catch {
+    // keep it as it was
+  }
+  return decoded
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\.(html?|aspx|php)$/, "")
+    .split("/")
+    .map((segment) => {
+      const whole = PATH_SEGMENTS[segment] ?? PATH_WORDS[segment];
+      if (whole) return whole;
+      return segment
+        .split(/([-_])/)
+        .map((word) => PATH_WORDS[word] ?? word)
+        .join("");
+    })
+    .join("/");
+}
+
 // Like normalizeUrl, but language and region copies of a page share a key:
-// acme.example/en-us/careers and acme.example/de-de/careers are one page.
+// acme.example/en-us/careers and acme.example/de-de/careers are one page,
+// and so are translated paths such as /de-de/karriere and /en-us/careers.
 export function pageKey(url: string): string {
   const locale = localeOf(url);
   if (!locale) return normalizeUrl(url);
   const parsed = new URL(url.trim());
-  parsed.pathname = parsed.pathname.replace(/^\/[^/]+/, "") || "/";
+  parsed.pathname = translatePath(parsed.pathname.replace(/^\/[^/]+/, "") || "/");
   return normalizeUrl(parsed.toString());
 }
 
@@ -294,18 +409,25 @@ export function isLookalike(
   // jobs.acme.example.scam.example
   if (`.${host}.`.includes(`.${officialDomain}.`)) return true;
 
-  const label = domainLabel(candidate) ?? "";
-  const flat = label.replace(/-/g, "");
-  const officialLabel = (domainLabel(officialDomain) ?? "").replace(/-/g, "");
-  const names = [officialLabel, compactName(companyName)].filter(
-    (n, i, all) => n.length >= 3 && all.indexOf(n) === i,
-  );
+  // Compared as written and as read: punycode decoded, look-alike
+  // characters from other scripts as the Latin letter they imitate
+  // (аcme.example with a Cyrillic а), and "rn" as "m" (acrne.example).
+  const shown = toUnicodeDomain(domainLabel(candidate) ?? "");
+  const officialShown = toUnicodeDomain(domainLabel(officialDomain) ?? "").replace(/-/g, "");
+  const forms: Array<{ label: string; names: string[] }> = [
+    { label: shown, names: [officialShown, compactName(companyName)] },
+    { label: skeleton(shown), names: [skeleton(officialShown), skeleton(compactName(companyName))] },
+  ];
 
-  for (const name of names) {
-    if (flat === name) return true; // acme.vercel.app, ac-me.example
-    if (name.length >= 4 && flat.includes(name)) return true; // careers-acme.example
-    if (name.length < 4 && label.split("-").includes(name)) return true;
-    if (name.length >= 4 && levenshtein(flat, name) === 1) return true; // acmee.example, acne.example
+  for (const { label, names: all } of forms) {
+    const flat = label.replace(/-/g, "");
+    const names = all.filter((n, i) => n.length >= 3 && all.indexOf(n) === i);
+    for (const name of names) {
+      if (flat === name) return true; // acme.vercel.app, ac-me.example
+      if (name.length >= 4 && flat.includes(name)) return true; // careers-acme.example
+      if (name.length < 4 && label.split("-").includes(name)) return true;
+      if (name.length >= 4 && levenshtein(flat, name) === 1) return true; // acmee.example, acne.example
+    }
   }
   return false;
 }

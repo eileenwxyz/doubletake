@@ -3,6 +3,7 @@
 // server: the page imports it too.
 
 import type { Direction, SourceType, Verdict } from "@/lib/check/types";
+import type { LookalikeChar } from "@/lib/lookalike-chars";
 
 // ---- Page ----
 export const SITE_NAME = "Doubletake";
@@ -58,6 +59,11 @@ export const SUBTITLES = {
   pagesUnchecked: "Some pages couldn't be checked.",
   scammersUsedName: "Scammers have used this name.",
   notCompanyChannel: "This address is not one of the company's channels.",
+  // The warnings search failed; the rest of the check finished.
+  partial: "Part of the check didn't finish.",
+  // A staffing agency and the client it names both check out.
+  agencyLink: (agency: string, client: string) =>
+    `We couldn't confirm ${agency} works with ${client}.`,
 } as const;
 
 export const NEED_MORE_DETAIL_MESSAGE =
@@ -117,10 +123,11 @@ export const REASONS = {
     `The sender's domain ${d} belongs to ${o}, but it is not on the recruiting list ${company} publishes.`,
   controlledUnread: (d: string, company: string, o: string) =>
     `The sender's domain ${d} belongs to ${o}, but ${company}'s recruiting pages couldn't be read, so this check is incomplete.`,
-  imitatesListed: (d: string, company: string, imitated: string) =>
-    `The sender's domain ${d} imitates ${imitated}, a recruiting domain ${company} publishes.`,
-  imitatesOfficial: (d: string, company: string, o: string) =>
-    `The sender's domain ${d} imitates ${company}'s official domain ${o}.`,
+  // how: what makes it look the same (LOOKALIKE_CHARS.describe), if known.
+  imitatesListed: (d: string, company: string, imitated: string, how?: string) =>
+    `The sender's domain ${d} imitates ${imitated}, a recruiting domain ${company} publishes${how ? `: it ${how}` : ""}.`,
+  imitatesOfficial: (d: string, company: string, o: string, how?: string) =>
+    `The sender's domain ${d} imitates ${company}'s official domain ${o}${how ? `: it ${how}` : ""}.`,
   hiringLinked: (d: string, company: string, platform: string) =>
     `${d} is ${platform} hiring software, and ${company}'s own site links to ${platform}.`,
   hiringUnlinked: (d: string, company: string, platform: string) =>
@@ -133,6 +140,9 @@ export const REASONS = {
     `The sender's domain ${d} is not connected to ${company}'s official domain ${o}.`,
   unrelatedUnread: (d: string, company: string, o: string) =>
     `The sender's domain ${d} is not connected to ${company}'s official domain ${o}, and some of ${company}'s pages couldn't be read to check for other recruiting domains.`,
+  senderAgency: (d: string, agency: string) =>
+    `The sender's domain ${d} belongs to ${agency}, a staffing agency. Agencies often recruit for other companies.`,
+  partyUnconfirmed: (company: string) => `${company}'s official website couldn't be confirmed.`,
   unknownCompany: (d: string, company: string) =>
     `No official domain for ${company} was found to compare ${d} with.`,
   authorityWarning: (host: string, company: string) =>
@@ -195,6 +205,10 @@ export const COULDNT_FIND = {
     `The client company isn't named. ${agency} posted this job for a client it doesn't name, so only ${agency} was checked.`,
   noJobListings: (company: string) =>
     `Couldn't read ${company}'s own careers page or job board to look for this job.`,
+  warningsUnfinished: "We couldn't finish searching for scam reports.",
+  partyUnfinished: (company: string) => `We couldn't finish checking ${company}.`,
+  agencyLink: (agency: string, client: string) =>
+    `We couldn't confirm that ${agency} works with ${client}.`,
 } as const;
 
 // ---- Result page ----
@@ -205,11 +219,22 @@ export const RESULT = {
   notThisOne: "Not this one?",
   disclaimer: "About the evidence we found, not a guarantee.",
   nextStepLabel: "Your next step",
+  // domain: the company's official domain.
   nextStep: {
     fraud: (company: string) => `Read ${company}'s recruiting fraud page`,
     careers: (company: string) => `Find the job on ${company}'s careers page`,
     site: (company: string) => `Go to ${company}'s official website`,
+    ask_email: (_company: string, domain: string) =>
+      `Ask them to email you from their @${domain} address.`,
+    lookalike: (company: string, domain: string) =>
+      `Don't reply. Contact ${company} through ${domain} instead.`,
+    ask_client: () => "Ask the recruiter which company this job is with, then check that company.",
   },
+  // The header of a check on a staffing agency and the client it names.
+  recruitingFor: (agency: string, client: string) => `${agency}, recruiting for ${client}`,
+  // Shown instead of a link's address when the address would show
+  // someone's own words (a Glassdoor review's title).
+  glassdoorCompanyPage: "Glassdoor company page",
   companySaysFrom: (domain: string) => `From ${domain} · Official`,
   topReasons: "Top reasons",
   // Ends a group of top reasons when equally strong ones were left out;
@@ -275,7 +300,26 @@ export const DIFF = {
     `“${before}” is added before the company's domain and “${after}” after it.`,
   missingChar: (name: string) => `${name} is missing.`,
   missingText: (removed: string) => `The characters “${removed}” are missing.`,
+  // how: LOOKALIKE_CHARS.describe.
+  lookalike: (how: string) => `It ${how}.`,
   same: "The domains look the same.",
+} as const;
+
+// ---- Look-alike characters ----
+// "uses a Cyrillic а that looks like a Latin a", "uses “rn” that looks like
+// an m". Used inside a reason and in the side-by-side view.
+function article(word: string): string {
+  return /^[aeiou]/i.test(word) || /^[fhlmnrsx]$/i.test(word) ? "an" : "a";
+}
+
+export const LOOKALIKE_CHARS = {
+  describe: (odd: LookalikeChar): string => {
+    if (odd.kind === "sequence") {
+      return `uses “${odd.seq}” that looks like ${article(odd.looksLike)} ${odd.looksLike}`;
+    }
+    if (!odd.latin) return `mixes scripts, with ${article(odd.script)} ${odd.script} ${odd.char}`;
+    return `uses ${article(odd.script)} ${odd.script} ${odd.char} that looks like a Latin ${odd.latin}`;
+  },
 } as const;
 
 // ---- Screen states ----

@@ -27,8 +27,10 @@ export function formatCheckedAt(iso: string, locale?: string, timeZone?: string)
 
 export type TextPart = { text: string; mono: boolean };
 
+// Labels may be in any script, so a decoded internationalised domain
+// (аcme.example) is shown like any other.
 const ADDRESS_OR_DOMAIN =
-  /[a-z0-9._%+-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)+|(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}(?:\/(?:[^\s]*[^\s.,;:!?)”"])?)?/gi;
+  /[\p{L}\p{N}._%+-]+@[\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)+|(?:[\p{L}\p{N}](?:[\p{L}\p{N}-]*[\p{L}\p{N}])?\.)+[a-z]{2,}(?:\/(?:[^\s]*[^\s.,;:!?)”"])?)?/giu;
 
 // Splits a sentence so that domains, web addresses and email addresses can
 // be shown in the mono font.

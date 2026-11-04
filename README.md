@@ -31,6 +31,15 @@ The server then:
    verdict ("strong_warning", "mixed", "no_red_flags" or "not_enough"), an
    optional subtitle, the company's own words about its recruiting addresses,
    the top reasons, what couldn't be found, and every source.
+   A staffing agency recruiting for a client it names (in a job posting,
+   or a recruiter writing from a confirmed agency's own domain about the
+   company entered) gets both companies checked: the result is "mixed"
+   unless both official domains are confirmed with no authority or report
+   warnings, and then says we couldn't confirm the agency works with the
+   client. If the scam-warnings search fails but the official search
+   works, the result still comes back, marked as partial. Internationalised
+   domains are decoded, and a look-alike character (a Cyrillic "а", or
+   "rn" for "m") is named in the reason.
 5. Picks the top reasons: every reason the verdict was decided on and every
    reason that disagrees with it, then up to 3 in all by strength. Reasons
    stating the same fact from several pages become one line with every link,

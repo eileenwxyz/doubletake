@@ -15,7 +15,7 @@ describe("look-alike domain diff", () => {
 
   it("describes a swapped letter or digit", () => {
     expect(diffDomains("acrne.example", "acme.example").description).toBe(
-      "“rn” replaces “m”.",
+      "It uses “rn” that looks like an m.",
     );
     expect(diffDomains("exampie.example", "example.example").description).toBe(
       "The letter i replaces the letter l.",

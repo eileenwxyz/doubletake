@@ -1,3 +1,4 @@
+import { domainToASCII } from "node:url";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const takeCheck = vi.fn();
@@ -56,6 +57,16 @@ describe("POST /api/check", () => {
       jobLink: null,
       jobTitle: null,
     });
+  });
+
+  it("passes an internationalised email domain in its ASCII (punycode) form", async () => {
+    // "аcme.example" with a Cyrillic а.
+    await post({ company: "Acme", email: "recruiter@\u0430cme.example" });
+    const ascii = domainToASCII("\u0430cme.example");
+    expect(ascii.startsWith("xn--")).toBe(true);
+    expect(runCheck).toHaveBeenCalledWith(
+      expect.objectContaining({ senderAddress: `recruiter@${ascii}`, senderDomain: ascii }),
+    );
   });
 
   it("accepts an email with a display name, uppercase and extra spaces", async () => {
