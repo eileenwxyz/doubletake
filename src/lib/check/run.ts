@@ -5,6 +5,7 @@ import {
   boardPostingInfo,
   linkedBoardPages,
   linkedInCompanyPageUrl,
+  parseAggregatorPosting,
   parseLinkedInPosting,
   pickCompanyPage,
   websiteFieldDomain,
@@ -13,8 +14,12 @@ import {
 import { findOfficialDomain, planReads } from "./official";
 import { buildReport, type JobInput } from "./report";
 import { LINKEDIN_DOMAIN } from "./domain-lists";
-import { pageKey } from "./domains";
-import { LINKEDIN_UNREADABLE_MESSAGE, NEED_MORE_DETAIL_MESSAGE } from "@/lib/copy";
+import { pageKey, registrableDomain } from "./domains";
+import {
+  LINKEDIN_UNREADABLE_MESSAGE,
+  NEED_MORE_DETAIL_MESSAGE,
+  NO_EMPLOYER_MESSAGE,
+} from "@/lib/copy";
 import type { CheckResponse, PageRead, SearchHit } from "./types";
 
 // Freshness for full-page reads (seconds of cache age allowed).
@@ -81,6 +86,8 @@ export async function runCheck(req: CheckRequest): Promise<CheckResponse> {
   const extraSearches: string[] = [];
   let job: JobInput | null = null;
   let warnings: ReturnType<typeof warningSearch> | null = null;
+  // The employer's own careers page, when an aggregator posting links to it.
+  let careersLink: string | null = null;
 
   if (link?.kind === "linkedin") {
     const [posting] = await extract(
@@ -140,6 +147,29 @@ export async function runCheck(req: CheckRequest): Promise<CheckResponse> {
       unnamedClient: info.unnamedClient,
     };
     jobReads.push(posting);
+  } else if (link?.kind === "aggregator") {
+    // Check the employer the posting names, never the site it is on.
+    const [posting] = await extract(
+      [{ url: link.url, role: "job" }],
+      CAREERS_MAX_AGE,
+      "The employer's name, the job title, the employer's own website or careers page, and whether the job is still open",
+    );
+    const info = parseAggregatorPosting(posting, link);
+    if (!info) return { status: "need_more_detail", message: NO_EMPLOYER_MESSAGE };
+    company = info.employer;
+    jobTitle = jobTitle ?? info.title;
+    claimed = info.site;
+    careersLink = info.careersUrl;
+    job = {
+      title: jobTitle,
+      postingUrl: link.url,
+      site: link.site,
+      posted: null,
+      siteDomain: link.domain,
+      unnamedClient: info.unnamedClient,
+    };
+    // Only the posting itself, not the other jobs the site lists.
+    jobReads.push({ ...posting, text: info.body });
   } else if (jobTitle) {
     job = { title: jobTitle, postingUrl: null, site: null, posted: null };
   }
@@ -170,6 +200,14 @@ export async function runCheck(req: CheckRequest): Promise<CheckResponse> {
   let reads: PageRead[] = [];
   if (found.status === "found") {
     const planned = planReads(company, found.domain, officialHits, warningHits, req.locale);
+    // The careers page the posting links to is read for the careers check.
+    if (
+      careersLink &&
+      registrableDomain(careersLink) === found.domain &&
+      !planned.some((p) => pageKey(p.url) === pageKey(careersLink!))
+    ) {
+      planned.unshift({ url: careersLink, role: "careers" });
+    }
     const objective = `Which email addresses or domains ${company}'s recruiters use, and any recruiting fraud notice${
       jobTitle ? `, and whether the job "${jobTitle}" is listed` : ""
     }`;

@@ -173,3 +173,29 @@ export const JOB_BOARD_HOSTS: ReadonlyArray<{ platform: string; hosts: readonly 
 
 // LinkedIn: job postings are rebuilt as https://www.linkedin.com/jobs/view/<id>.
 export const LINKEDIN_DOMAIN = "linkedin.com";
+
+// Job aggregators and public job boards: sites that carry other employers'
+// postings. A posting there is checked against the employer it names, never
+// the site. keepParams are the only query parameters kept when the link is
+// cleaned (the job's ID); everything else, such as search terms and
+// location, is dropped. Government job boards (any gov suffix) that aren't
+// listed here are recognised by their job-posting paths (see job-link.ts).
+export const JOB_AGGREGATORS: ReadonlyArray<{
+  name: string;
+  domains: readonly string[];
+  keepParams: readonly string[];
+}> = [
+  { name: "Indeed", domains: ["indeed.com", "indeed.co.uk", "indeed.ca", "indeed.com.au"], keepParams: ["jk", "vjk"] },
+  { name: "ZipRecruiter", domains: ["ziprecruiter.com", "ziprecruiter.co.uk"], keepParams: ["jid"] },
+  { name: "Glassdoor", domains: ["glassdoor.com", "glassdoor.co.uk", "glassdoor.ca"], keepParams: ["jl", "joblistingid"] },
+  { name: "Monster", domains: ["monster.com", "monster.co.uk", "monster.ca"], keepParams: ["jobid", "job_id"] },
+  { name: "USAJOBS", domains: ["usajobs.gov"], keepParams: [] },
+  // State job boards, shown by their domain.
+  { name: "azjobconnection.gov", domains: ["azjobconnection.gov"], keepParams: ["jobid", "id", "jo"] },
+];
+
+// Query parameters that hold a job's ID on government job boards not listed
+// above (lower case).
+export const GOV_JOB_ID_PARAMS: ReadonlySet<string> = new Set([
+  "jobid", "job_id", "id", "jo", "joborderid", "jobordernumber", "jobno", "posting", "postingid",
+]);

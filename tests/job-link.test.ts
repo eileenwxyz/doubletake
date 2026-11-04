@@ -7,12 +7,14 @@ import {
   checkCareers,
   forUnnamedClient,
   isUnsupportedJobSiteLink,
+  parseAggregatorPosting,
   parseJobLink,
   parseLinkedInPosting,
   unwrapLinkedInRedirect,
   websiteFieldDomain,
 } from "@/lib/check/job-link";
 import type { CheckReport, PageRead, PageRole, SearchHit } from "@/lib/check/types";
+import { RESULT } from "@/lib/copy";
 import { ACME_FRAUD_TEXT, ACME_OFFICIAL_HITS, hit, read, unreadable } from "./fixtures";
 
 // ---- Fake Parallel API ----
@@ -456,5 +458,189 @@ describe("staffing agency posting for an unnamed client", () => {
     const r = (await runCheck(req(null))) as CheckReport;
     expect(r.job?.unnamedClient).toBe(false);
     expect(r.couldntFind.some((c) => c.text.startsWith("The client company isn't named"))).toBe(false);
+  });
+});
+
+// ---- Plain-named agencies ----
+
+describe("first-person client wording is an agency signal on its own", () => {
+  it("spots agencies whose names have no agency word", () => {
+    expect(forUnnamedClient("Fabrikam Partners", "On behalf of our client, we are hiring a Claims Analyst.")).toBe(true);
+    expect(forUnnamedClient("Northwind Group", "Our client is seeking a Product Designer.")).toBe(true);
+    expect(forUnnamedClient("Northwind Group", "One of our clients needs a Product Designer.")).toBe(true);
+  });
+
+  it("still needs more than 'a client' or 'our clients'", () => {
+    expect(forUnnamedClient("Northwind Group", "You will support a client in the energy sector.")).toBe(false);
+    expect(forUnnamedClient("Northwind Group", "Our clients include insurers and banks.")).toBe(false);
+    expect(forUnnamedClient("Northwind Group", "Our client, Globex Corp, is seeking a Product Designer.")).toBe(false);
+  });
+});
+
+// ---- Job aggregators and public job boards ----
+
+describe("aggregator links", () => {
+  it("keeps only the job's ID, dropping search terms and location", () => {
+    expect(
+      parseJobLink("https://www.azjobconnection.gov/jobs/jobdetails?jobid=12345678&keywords=welder&location=Tempe&radius=25"),
+    ).toEqual({
+      kind: "aggregator",
+      site: "azjobconnection.gov",
+      domain: "azjobconnection.gov",
+      url: "https://www.azjobconnection.gov/jobs/jobdetails?jobid=12345678",
+    });
+    expect(parseJobLink("https://www.indeed.com/q-welder-l-shelbyville-jobs.html?vjk=0a1b2c3d4e5f6a7b&from=serp")).toMatchObject({
+      site: "Indeed",
+      url: "https://www.indeed.com/viewjob?jk=0a1b2c3d4e5f6a7b",
+    });
+    expect(parseJobLink("https://www.glassdoor.com/Job/shelbyville-welder-jobs-SRCH_IL.0,11.htm?jl=1009876543210")).toMatchObject({
+      site: "Glassdoor",
+      url: "https://www.glassdoor.com/job-listing/j?jl=1009876543210",
+    });
+    expect(parseJobLink("https://www.ziprecruiter.com/c/Northwind-Group/Job/Product-Designer/-in-Phoenix,AZ?jid=ab12cd34ef&lvk=x")).toMatchObject({
+      site: "ZipRecruiter",
+      url: "https://www.ziprecruiter.com/c/Northwind-Group/Job/Product-Designer/-in-Phoenix,AZ?jid=ab12cd34ef",
+    });
+    expect(parseJobLink("https://www.monster.com/job-openings/product-designer-phoenix-az--0a1b2c3d?mstr_dist=true")).toMatchObject({
+      site: "Monster",
+      url: "https://www.monster.com/job-openings/product-designer-phoenix-az--0a1b2c3d",
+    });
+    expect(parseJobLink("https://www.usajobs.gov/GetJob/ViewDetails/812345600?keyword=designer")).toMatchObject({
+      site: "USAJOBS",
+      url: "https://www.usajobs.gov/job/812345600",
+    });
+    // Another state's job board, recognised by its job-posting link.
+    expect(parseJobLink("https://www.jobs.state.nm.us/jobs/jobdetails?jobid=998877&keywords=x")).toBeNull();
+    expect(parseJobLink("https://www.worksourcewa.gov/jobsearch/detail.aspx?jobid=998877&keywords=x")).toMatchObject({
+      site: "worksourcewa.gov",
+      url: "https://www.worksourcewa.gov/jobsearch/detail.aspx?jobid=998877",
+    });
+  });
+
+  it("refuses aggregator links that aren't a posting", () => {
+    for (const link of ["https://www.indeed.com/jobs?q=welder&l=Shelbyville", "https://www.monster.com/jobs/search?q=welder"]) {
+      expect(parseJobLink(link)).toBeNull();
+      expect(isUnsupportedJobSiteLink(link)).toBe(true);
+    }
+  });
+});
+
+describe("a state job board posting by a staffing agency with a plain name", () => {
+  const MESSY = "https://www.azjobconnection.gov/jobs/jobdetails?jobid=12345678&keywords=product%20designer&location=Tempe&radius=25";
+  const CLEAN = "https://www.azjobconnection.gov/jobs/jobdetails?jobid=12345678";
+  const CAREERS = "https://careers.northwind.example/jobs/product-designer";
+  const FRAUD_ALERT = "https://www.azjobconnection.gov/fraud-alert";
+  const NW_FILLER =
+    "Northwind Group places designers and engineers with technology companies across the Southwest. " +
+    "Every role we recruit for is listed on our own careers site, and we never charge candidates.";
+
+  const posting = (intro: string) => `# Product Designer
+
+**Employer:** Northwind Group
+
+Location: Phoenix, AZ · Full time
+
+${intro} ${NW_FILLER}
+
+Apply on the employer's site: ${CAREERS}?src=azjc
+
+## Similar jobs
+
+# Graphic Designer
+
+**Employer:** Globex`;
+
+  function northwind(intro: string) {
+    pages = {
+      [CLEAN]: { title: "Product Designer | Arizona Job Connection", text: posting(intro) },
+      [CAREERS]: { text: `# Product Designer at Northwind Group\n\n${NW_FILLER}\n\nApply now.` },
+      "https://careers.northwind.example/": { text: `# Careers at Northwind Group\n\n${NW_FILLER}\n\n- Product Designer\n- Data Engineer` },
+      "https://www.northwind.example/": { text: `# Northwind Group\n\n${NW_FILLER}` },
+    };
+    searchResults = (call) => {
+      if (call.options?.includeDomains?.includes("northwind.example")) {
+        return [
+          hit("https://www.northwind.example/", "Northwind Group | Technology recruiting", "Northwind Group places designers."),
+          hit("https://careers.northwind.example/", "Careers at Northwind Group", "Open roles at Northwind Group."),
+        ];
+      }
+      if (call.queries.some((q) => q.includes("job scam"))) {
+        // The board's own fraud notice names the employer and uses scam words.
+        return [hit(FRAUD_ALERT, "Job seeker fraud alert", "Beware of scammers posing as employers such as Northwind Group.")];
+      }
+      return [];
+    };
+  }
+
+  it("checks Northwind, says where it was posted, and adds the unnamed-client item", async () => {
+    northwind("Our client is seeking a Product Designer to join their in-house team.");
+    const r = (await runCheck(req(null, parseJobLink(MESSY)))) as CheckReport;
+
+    expect(calls.extract[0].urls).toEqual([CLEAN]);
+    expect(JSON.stringify(calls)).not.toMatch(/keywords|tempe|radius/i);
+
+    expect(r.status).toBe("ok");
+    expect(r.companyName).toBe("Northwind Group");
+    expect(r.officialDomain).toBe("northwind.example");
+    expect(calls.search.find((c) => c.queries.includes("Northwind Group official website careers"))?.options).toEqual({
+      includeDomains: ["northwind.example"],
+    });
+    expect(r.job).toMatchObject({
+      site: "azjobconnection.gov",
+      postingUrl: CLEAN,
+      title: "Product Designer",
+      unnamedClient: true,
+      careers: "listed",
+      careersUrl: CAREERS,
+    });
+    expect(RESULT.postedOn(r.job!.site!)).toBe("Posted on azjobconnection.gov");
+    expect(r.couldntFind).toContainEqual({
+      kind: "couldnt_check",
+      text: "The client company isn't named. Northwind Group posted this job for a client it doesn't name, so only Northwind Group was checked.",
+      url: null,
+    });
+    // Nothing from the other jobs the board lists.
+    expect(JSON.stringify(r)).not.toMatch(/globex|graphic designer/i);
+  });
+
+  it("treats the board's own pages as general advice, never official or the next step", async () => {
+    northwind("Our client is seeking a Product Designer.");
+    const r = (await runCheck(req(null, parseJobLink(MESSY)))) as CheckReport;
+    expect(r.sources.find((s) => s.url === FRAUD_ALERT)?.type).toBe("General advice");
+    expect(r.sources.find((s) => s.url === CLEAN)?.type).toBe("Other");
+    expect(r.sources.filter((s) => s.url.includes("azjobconnection.gov")).every((s) => s.type !== "Official")).toBe(true);
+    expect(r.reasons.some((x) => x.sourceUrl?.includes("azjobconnection.gov") && x.direction === "caution")).toBe(false);
+    expect(r.nextStep?.url).not.toContain("azjobconnection.gov");
+  });
+
+  it("doesn't change the verdict because of the unnamed client", async () => {
+    northwind("Our client is seeking a Product Designer.");
+    const withClient = (await runCheck(req(null, parseJobLink(MESSY)))) as CheckReport;
+    northwind("Northwind Group is seeking a Product Designer.");
+    const without = (await runCheck(req(null, parseJobLink(MESSY)))) as CheckReport;
+    expect(without.job?.unnamedClient).toBe(false);
+    expect(without.couldntFind.some((c) => c.text.startsWith("The client company isn't named"))).toBe(false);
+    expect(withClient.verdict).toBe(without.verdict);
+    expect(withClient.reasons).toEqual(without.reasons);
+  });
+
+  it("asks for the company name when the posting names no employer", async () => {
+    pages = { [CLEAN]: { title: "Product Designer | Arizona Job Connection", text: `# Product Designer\n\n${NW_FILLER}` } };
+    expect(await runCheck(req(null, parseJobLink(MESSY)))).toEqual({
+      status: "need_more_detail",
+      message: "That job posting doesn't name the employer. Enter the company's name instead.",
+    });
+    expect(calls.search).toHaveLength(0);
+  });
+
+  it("reads the employer from Indeed's company link", () => {
+    const link = parseJobLink("https://www.indeed.com/viewjob?jk=0a1b2c3d4e5f6a7b");
+    if (link?.kind !== "aggregator") throw new Error("expected an aggregator link");
+    expect(
+      parseAggregatorPosting(
+        { ok: true, title: "Product Designer - Phoenix, AZ - Indeed.com", text: "# Product Designer\n\n[Northwind Group](https://www.indeed.com/cmp/Northwind-Group?from=x)\n\nPhoenix, AZ" },
+        link,
+      ),
+    ).toMatchObject({ employer: "Northwind Group", title: "Product Designer", site: null });
   });
 });

@@ -73,6 +73,9 @@ export type JobInput = {
   // "LinkedIn", or the job board's name ("Lever").
   site: string | null;
   posted: string | null;
+  // The registrable domain of the aggregator or job board the posting is
+  // on, when it isn't the employer's own site or a hiring platform.
+  siteDomain?: string | null;
   // A staffing agency posted the job for a client it doesn't name. The
   // agency is what gets checked; the unnamed client is not a warning sign
   // (agencies often keep clients confidential).
@@ -189,6 +192,10 @@ export function buildReport(input: CheckInput): CheckResponse {
     linkedBoards: links.linkedBoards,
     linkedDomains: links.linkedDomains,
     senderDomain: senderRoot,
+    jobSite:
+      input.job?.siteDomain && input.job.postingUrl
+        ? { domain: input.job.siteDomain, postingUrl: input.job.postingUrl }
+        : null,
   };
 
   // All evidence, one entry per distinct URL. Full text replaces excerpts
@@ -416,7 +423,9 @@ export function buildReport(input: CheckInput): CheckResponse {
       add(1, "caution", REASONS.jobNotListed(title, name, host), careers.url, "Official", true);
     }
 
-    if (posting && !isLinkedIn && input.job.site) {
+    // Hiring-platform boards only: employers don't link to their postings
+    // on aggregators or public job boards, so that isn't a caution there.
+    if (posting && !isLinkedIn && !input.job.siteDomain && input.job.site) {
       if (postingType === "Official") {
         add(2, "reassures", REASONS.boardLinked(displayHost(posting.url), name, input.job.site), posting.url);
       } else if (officialDomain && readOk.length) {

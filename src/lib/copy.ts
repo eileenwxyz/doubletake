@@ -63,6 +63,9 @@ export const SUBTITLES = {
 export const NEED_MORE_DETAIL_MESSAGE =
   "Several companies use this name. Add their website or the recruiter's email.";
 
+export const NO_EMPLOYER_MESSAGE =
+  "That job posting doesn't name the employer. Enter the company's name instead.";
+
 export const LINKEDIN_UNREADABLE_MESSAGE =
   "We couldn't read that LinkedIn job posting. Enter the company's name and the job title instead.";
 
@@ -175,6 +178,7 @@ export const COULDNT_FIND = {
 export const RESULT = {
   example: "Example",
   checkedAt: (when: string) => `Checked ${when}`,
+  postedOn: (site: string) => `Posted on ${site}`,
   notThisOne: "Not this one?",
   disclaimer: "About the evidence we found, not a guarantee.",
   nextStepLabel: "Your next step",

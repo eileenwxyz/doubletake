@@ -9,6 +9,7 @@ import {
   isDirectory,
   isGovernment,
   isReportSite,
+  pageKey,
   registrableDomain,
 } from "./domains";
 import { isQuestionPost, namesCompanyExactly } from "./text";
@@ -23,6 +24,10 @@ export type SourceContext = {
   linkedDomains: ReadonlySet<string>;
   // The sender's registrable domain, when a recruiter email was given.
   senderDomain?: string | null;
+  // The job aggregator or public job board a linked posting is on. The
+  // posting itself is "Other"; every other page on that site (its own fraud
+  // notice, say) is general advice, never official and never an authority.
+  jobSite?: { domain: string; postingUrl: string } | null;
 };
 
 function escapeRegExp(value: string): string {
@@ -74,6 +79,10 @@ export function classifySource(
   if (ctx.officialDomain && domain === ctx.officialDomain) return "Official";
   if (hiringPlatform(domain) && ctx.linkedBoards.has(boardKey(url) ?? "")) {
     return "Official";
+  }
+
+  if (ctx.jobSite && domain === ctx.jobSite.domain) {
+    return pageKey(url) === pageKey(ctx.jobSite.postingUrl) ? "Other" : "General advice";
   }
 
   const names = namesCompanyExactly(`${title ?? ""}\n${text}`, ctx.company, [

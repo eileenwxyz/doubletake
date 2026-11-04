@@ -159,8 +159,18 @@ describe("POST /api/check", () => {
     expect(runCheck.mock.calls[1][0]).toMatchObject({ company: "Acme", jobLink: null, jobTitle: "Senior Anvil Engineer" });
   });
 
+  it("passes on a state job board link without the search terms", async () => {
+    await post({ company: "https://www.azjobconnection.gov/jobs/jobdetails?jobid=12345678&keywords=designer&location=Tempe" });
+    expect(runCheck.mock.calls[0][0]).toMatchObject({
+      company: null,
+      website: null,
+      jobLink: { kind: "aggregator", site: "azjobconnection.gov", url: "https://www.azjobconnection.gov/jobs/jobdetails?jobid=12345678" },
+    });
+    expect(JSON.stringify(runCheck.mock.calls)).not.toMatch(/keywords|tempe/i);
+  });
+
   it("rejects a LinkedIn or job board link that isn't a posting", async () => {
-    for (const company of ["https://www.linkedin.com/company/acme-example", "jobs.lever.co/acme"]) {
+    for (const company of ["https://www.linkedin.com/company/acme-example", "jobs.lever.co/acme", "https://www.indeed.com/jobs?q=welder"]) {
       const response = await post({ company });
       expect(response.status).toBe(400);
     }

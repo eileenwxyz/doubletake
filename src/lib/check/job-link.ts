@@ -2,8 +2,17 @@
 // posting and company page, and looking for the job on the company's own
 // listings.
 
-import { JOB_BOARD_HOSTS, LINKEDIN_DOMAIN } from "./domain-lists";
-import { boardKey, compactName, domainLabel, hiringPlatform, hostOf, registrableDomain } from "./domains";
+import { GOV_JOB_ID_PARAMS, JOB_BOARD_HOSTS, LINKEDIN_DOMAIN } from "./domain-lists";
+import {
+  boardKey,
+  compactName,
+  domainLabel,
+  hiringPlatform,
+  hostOf,
+  isGovernment,
+  jobAggregator,
+  registrableDomain,
+} from "./domains";
 import { isThirdParty } from "./official";
 import { linksIn, namesCompanyLoosely, plainText, properName, tidyName } from "./text";
 import type { CareersResult, PageRead, SearchHit } from "./types";
@@ -14,7 +23,12 @@ export type JobLink =
   | { kind: "linkedin"; jobId: string; url: string }
   // url is the posting without its query string; boardUrl is the company's
   // board on the platform (https://jobs.lever.co/<slug>).
-  | { kind: "board"; platform: string; slug: string; url: string; boardUrl: string };
+  | { kind: "board"; platform: string; slug: string; url: string; boardUrl: string }
+  // A job aggregator or public job board (Indeed, USAJOBS, a state job
+  // board). url keeps only the job's ID, never search terms or location.
+  // site is the name shown as "Posted on <site>"; domain is the site's
+  // registrable domain.
+  | { kind: "aggregator"; site: string; domain: string; url: string };
 
 function parseUrl(input: string): URL | null {
   const value = input.trim();
@@ -84,7 +98,57 @@ export function parseJobLink(input: string): JobLink | null {
     if (!jobId || jobId.length < 5 || jobId.length > 20) return null;
     return { kind: "linkedin", jobId, url: `https://www.linkedin.com/jobs/view/${jobId}` };
   }
-  return boardLink(url);
+  return boardLink(url) ?? aggregatorLink(url);
+}
+
+const SAFE_ID = /^[A-Za-z0-9_-]{2,64}$/;
+
+function aggregatorLink(url: URL): JobLink | null {
+  const domain = registrableDomain(url.hostname);
+  if (!domain) return null;
+  const listed = jobAggregator(domain);
+  if (!listed && !isGovernment(domain)) return null;
+  const host = url.hostname.toLowerCase() === domain ? `www.${domain}` : url.hostname.toLowerCase();
+  const path = url.pathname.replace(/\/+$/, "");
+  const keep = new Set((listed?.keepParams ?? [...GOV_JOB_ID_PARAMS]).map((k) => k.toLowerCase()));
+  const params = [...url.searchParams.entries()].filter(
+    ([k, v]) => keep.has(k.toLowerCase()) && SAFE_ID.test(v),
+  );
+  const param = (...names: string[]) => params.find(([k]) => names.includes(k.toLowerCase()))?.[1] ?? null;
+  const site = listed?.name ?? domain;
+  const make = (clean: string): JobLink => ({ kind: "aggregator", site, domain, url: clean });
+  const withParams = (p: string) =>
+    `https://${host}${p}${params.length ? `?${new URLSearchParams(params).toString()}` : ""}`;
+
+  switch (listed?.name) {
+    case "Indeed": {
+      const jk = param("jk", "vjk");
+      return jk ? make(`https://${host}/viewjob?jk=${jk}`) : null;
+    }
+    case "Glassdoor": {
+      // Search page paths carry the search terms, so with a listing ID only
+      // the ID is kept.
+      const jl = param("jl", "joblistingid");
+      if (jl) return make(`https://${host}/job-listing/j?jl=${jl}`);
+      return /^\/job-listing\/[^/]+$/i.test(path) ? make(`https://${host}${path}`) : null;
+    }
+    case "ZipRecruiter": {
+      const jid = param("jid");
+      if (/^\/c\/[^/]+\/job\//i.test(path)) return make(withParams(path));
+      return jid ? make(`https://${host}/jobs?jid=${jid}`) : null;
+    }
+    case "Monster":
+      return /^\/job-openings\/[^/]+$/i.test(path) ? make(`https://${host}${path}`) : null;
+    case "USAJOBS": {
+      const id = /^\/(?:job|getjob\/viewdetails)\/(\d+)$/i.exec(path)?.[1];
+      return id ? make(`https://www.usajobs.gov/job/${id}`) : null;
+    }
+  }
+  // State and other government job boards: a job-posting path with the
+  // job's ID in the query or the path.
+  if (!/job/i.test(path)) return null;
+  if (params.length === 0 && !/\/\d{4,}(\/|$)/.test(path)) return null;
+  return make(withParams(path));
 }
 
 // True for a link on LinkedIn or a hiring platform that isn't a job posting
@@ -92,7 +156,10 @@ export function parseJobLink(input: string): JobLink | null {
 export function isUnsupportedJobSiteLink(input: string): boolean {
   if (parseJobLink(input)) return false;
   const host = hostOf(input);
-  return host !== null && (registrableDomain(host) === LINKEDIN_DOMAIN || hiringPlatform(host) !== null);
+  return (
+    host !== null &&
+    (registrableDomain(host) === LINKEDIN_DOMAIN || hiringPlatform(host) !== null || jobAggregator(host) !== null)
+  );
 }
 
 // ---- LinkedIn posting ----
@@ -175,13 +242,20 @@ const HIDDEN_CLIENT =
 // right after it.
 const SOME_CLIENT = /\b(?:(?:a|an|our)\b[^.\n]{0,40}?\bclient\b|one of our\b[^.\n]{0,40}?\bclients\b)/giu;
 const NAME_FOLLOWS = /^\s*[,:(–-]?\s*\p{Lu}/u;
+// First-person client wording is an agency signal on its own, whatever the
+// poster's name ("Northwind Group ... our client is seeking"). "a client"
+// alone is not: employers support clients too.
+const FIRST_PERSON_CLIENT = /\b(?:our client\b(?!s)|one of our clients\b)/i;
 
-// The poster is a staffing agency (its name or the posting says so) and the
-// posting says the job is for a client it doesn't name. "Our client, Acme
-// Corp, ..." names the client and doesn't count.
+// The poster is a staffing agency (its name, the posting or its own
+// "our client" wording says so) and the posting says the job is for a
+// client it doesn't name. "Our client, Acme Corp, ..." names the client and
+// doesn't count.
 export function forUnnamedClient(poster: string, text: string): boolean {
   const flat = plainText(text);
-  if (!AGENCY_NAME.test(poster) && !AGENCY_TEXT.test(flat)) return false;
+  if (!AGENCY_NAME.test(poster) && !AGENCY_TEXT.test(flat) && !FIRST_PERSON_CLIENT.test(flat)) {
+    return false;
+  }
   if (HIDDEN_CLIENT.test(flat)) return true;
   for (const match of flat.matchAll(SOME_CLIENT)) {
     const after = flat.slice((match.index ?? 0) + match[0].length);
@@ -254,6 +328,89 @@ export function websiteFieldDomain(text: string): string | null {
     }
   }
   return null;
+}
+
+// ---- Job aggregators ----
+
+// Aggregators list other employers' jobs below the posting.
+const AGGREGATOR_OTHER_CONTENT =
+  /^.*\b(similar jobs|people also viewed|people also searched|jobs you may (?:also )?like|recommended jobs|related jobs|more jobs|other jobs)\b/im;
+const EMPLOYER_LABEL =
+  /^[ \t]*(?:[-*][ \t]+)?(?:\*\*|__)?(?:company|company name|employer|employer name|hiring (?:company|organi[sz]ation)|organi[sz]ation|posted by)(?:\*\*|__)?[ \t]*[:：]?[ \t]*(?:\*\*|__)?[ \t]*(.*)$/gim;
+const TITLE_LABEL =
+  /^[ \t]*(?:[-*][ \t]+)?(?:\*\*|__)?(?:job title|title|position|position title)(?:\*\*|__)?[ \t]*[:：][ \t]*(?:\*\*|__)?[ \t]*(.+)$/im;
+const CAREERS_PATH = /(careers?|jobs?|join|work-with-us|opportunities|hiring)/i;
+
+export type AggregatorPosting = {
+  // The employer the posting names, never the site it is on.
+  employer: string;
+  title: string | null;
+  // The employer's own domain, when the posting links to it. A claim only.
+  site: string | null;
+  // The employer's own careers page, when the posting links to it.
+  careersUrl: string | null;
+  unnamedClient: boolean;
+  // The posting text above the other jobs the site lists.
+  body: string;
+};
+
+// Reads a posting on a job aggregator or public job board for the employer
+// it names. Null when the posting couldn't be read or names no employer.
+export function parseAggregatorPosting(
+  read: Pick<PageRead, "ok" | "title" | "text">,
+  link: Extract<JobLink, { kind: "aggregator" }>,
+): AggregatorPosting | null {
+  if (!read.ok) return null;
+  const cut = AGGREGATOR_OTHER_CONTENT.exec(read.text);
+  const body = cut ? read.text.slice(0, cut.index) : read.text;
+  const lines = body.split("\n");
+
+  const notSite = (name: string | null) =>
+    name && compactName(name) !== compactName(link.site) && compactName(name) !== compactName(domainLabel(link.domain) ?? "")
+      ? name
+      : null;
+
+  let employer: string | null = null;
+  for (const match of body.matchAll(EMPLOYER_LABEL)) {
+    let value = match[1]?.trim() ?? "";
+    if (value === "") {
+      // The value on the next non-empty line.
+      const at = body.slice(0, match.index ?? 0).split("\n").length;
+      value = lines.slice(at).find((l) => l.trim() !== "")?.trim() ?? "";
+    }
+    employer = notSite(plausibleName(value));
+    if (employer) break;
+  }
+  // Indeed's company link, or "... at <Employer>" in the page title.
+  employer ??= notSite(plausibleName(/\[([^\]]+)\]\(https?:\/\/[^)\s]*\/cmp\/[^)\s]+\)/i.exec(body)?.[1]));
+  employer ??= notSite(plausibleName(read.title ? /\bat\s+(.+?)\s*(?:\||\s[-–—]\s|$)/i.exec(read.title)?.[1] : null));
+  if (!employer) return null;
+
+  const heading = [...body.matchAll(/^\s{0,3}#{1,3}\s+(.+)$/gm)]
+    .map((m) => notSite(plausibleName(m[1])))
+    .find((h): h is string => h !== null && compactName(h) !== compactName(employer!));
+  const title = plausibleName(TITLE_LABEL.exec(body)?.[1]) ?? heading ?? null;
+
+  // The employer's own site: a link whose domain name matches the employer.
+  const target = compactName(employer);
+  let site: string | null = null;
+  let careersUrl: string | null = null;
+  for (const href of linksIn(body)) {
+    const domain = registrableDomain(href);
+    if (!domain || domain === link.domain || isThirdParty(domain)) continue;
+    const label = (domainLabel(domain) ?? "").replace(/-/g, "");
+    if (label.length < 2 || !(label.includes(target) || target.includes(label))) continue;
+    if (site && site !== domain) continue;
+    site = domain;
+    if (!careersUrl && CAREERS_PATH.test(`${hostOf(href) ?? ""}${new URL(href).pathname}`)) {
+      const clean = new URL(href);
+      clean.search = "";
+      clean.hash = "";
+      careersUrl = clean.toString();
+    }
+  }
+
+  return { employer, title, site, careersUrl, unnamedClient: forUnnamedClient(employer, body), body };
 }
 
 // ---- Job boards ----

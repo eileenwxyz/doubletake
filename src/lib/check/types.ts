@@ -101,7 +101,9 @@ export type JobResult = {
   // The posting link as Doubletake read it (for LinkedIn, the rebuilt
   // https://www.linkedin.com/jobs/view/<id>, never the link the user pasted).
   postingUrl: string | null;
-  // Where the posting is: "LinkedIn", or a job board such as "Lever".
+  // Where the posting is: "LinkedIn", a job board such as "Lever", or an
+  // aggregator or public job board such as "Indeed" or "azjobconnection.gov".
+  // The page shows it as "Posted on <site>" (RESULT.postedOn).
   site: string | null;
   // How long ago LinkedIn says the job was posted ("2 weeks ago").
   posted: string | null;

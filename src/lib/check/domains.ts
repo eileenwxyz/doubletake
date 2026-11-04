@@ -4,6 +4,7 @@ import {
   DIRECTORIES,
   FREE_EMAIL_PROVIDERS,
   HIRING_PLATFORMS,
+  JOB_AGGREGATORS,
   LOCALE_SEGMENT,
   PERSONAL_PROFILE_PATHS,
   REPORT_SITES,
@@ -72,6 +73,15 @@ export function hiringPlatform(hostOrUrl: string): string | null {
   const domain = registrableDomain(hostOrUrl);
   if (!domain) return null;
   return HIRING_PLATFORMS.find((p) => p.domains.includes(domain))?.name ?? null;
+}
+
+// Job aggregators and public job boards that carry other employers'
+// postings: listed ones by name, and any other government job board found
+// by its link (see parseJobLink).
+export function jobAggregator(hostOrUrl: string): (typeof JOB_AGGREGATORS)[number] | null {
+  const domain = registrableDomain(hostOrUrl);
+  if (!domain) return null;
+  return JOB_AGGREGATORS.find((a) => a.domains.includes(domain)) ?? null;
 }
 
 export function isFreeEmailProvider(hostOrUrl: string): boolean {

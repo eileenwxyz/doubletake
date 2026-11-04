@@ -13,6 +13,7 @@ import {
   isDirectory,
   isFreeEmailProvider,
   isGovernment,
+  jobAggregator,
   isReportDomain,
   registrableDomain,
 } from "./domains";
@@ -40,6 +41,7 @@ export function isThirdParty(domain: string): boolean {
     isGovernment(domain) ||
     isDirectory(`https://${domain}/`) ||
     hiringPlatform(domain) !== null ||
+    jobAggregator(domain) !== null ||
     isFreeEmailProvider(domain)
   );
 }
