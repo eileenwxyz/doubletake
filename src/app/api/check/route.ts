@@ -1,5 +1,6 @@
 import { domainLabel, hostOf, isRealDomain, preferredLocale } from "@/lib/check/domains";
 import { isUnsupportedJobSiteLink, parseJobLink, type JobLink } from "@/lib/check/job-link";
+import { describeFailure } from "@/lib/check/errors";
 import { runCheck } from "@/lib/check/run";
 import {
   GENERIC_ERROR,
@@ -164,6 +165,14 @@ export async function POST(request: Request) {
     const body: CheckApiResponse = { ...result, checksRemaining: limit.remaining ?? null };
     return Response.json(body);
   } catch (error) {
+    // Server log only: the step that failed, the error's name, message and
+    // stack, with the API key, email addresses and query strings removed.
+    console.error(
+      "Check failed",
+      error instanceof DeadlineError
+        ? { step: "deadline", name: "DeadlineError", message: `No result after ${CHECK_DEADLINE_MS} ms`, stack: null }
+        : describeFailure(error, [process.env.PARALLEL_API_KEY, senderAddress ?? undefined]),
+    );
     // A check that returns nothing doesn't count against the limit.
     await limit.refund?.();
     // Deliberately no details: never surface upstream errors or secrets.

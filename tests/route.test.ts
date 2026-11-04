@@ -13,6 +13,7 @@ vi.mock("@/lib/check/run", () => ({
 }));
 
 const { POST } = await import("@/app/api/check/route");
+const { CheckStepError } = await import("@/lib/check/errors");
 
 function post(body: unknown) {
   return POST(
@@ -175,6 +176,43 @@ describe("POST /api/check", () => {
       expect(response.status).toBe(400);
     }
     expect(takeCheck).not.toHaveBeenCalled();
+  });
+
+  it("logs the failed step, error name, message and stack, without secrets", async () => {
+    vi.stubEnv("PARALLEL_API_KEY", "test-key-123");
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    const cause = new Error(
+      "Request for jordan.lee@acme.example to https://api.example/v1/search?q=night%20welder failed with key test-key-123",
+    );
+    runCheck.mockRejectedValue(new CheckStepError("search official presence", cause));
+    const response = await post({ company: "Acme", email: "Jordan Lee <jordan.lee@acme.example>" });
+    expect(response.status).toBe(502);
+
+    expect(log).toHaveBeenCalledTimes(1);
+    const [label, entry] = log.mock.calls[0] as [string, Record<string, string | null>];
+    expect(label).toBe("Check failed");
+    expect(entry).toMatchObject({ step: "search official presence", name: "Error" });
+    expect(entry.message).toContain("https://api.example/v1/search?[redacted]");
+    expect(entry.stack).toContain("Error:");
+    const logged = JSON.stringify(log.mock.calls);
+    expect(logged).not.toMatch(/jordan|welder|test-key-123|q=/i);
+    log.mockRestore();
+    vi.unstubAllEnvs();
+  });
+
+  it("logs a deadline as its own step", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.useFakeTimers();
+    try {
+      runCheck.mockReturnValue(new Promise(() => {}));
+      const pending = post({ company: "Acme" });
+      await vi.advanceTimersByTimeAsync(55_000);
+      await pending;
+      expect(log.mock.calls[0][1]).toMatchObject({ step: "deadline", name: "DeadlineError" });
+    } finally {
+      vi.useRealTimers();
+      log.mockRestore();
+    }
   });
 
   it("rejects an email in the company field", async () => {

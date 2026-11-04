@@ -25,6 +25,8 @@ type ExtractCall = { urls: string[]; objective: string };
 const calls: { search: SearchCall[]; extract: ExtractCall[] } = { search: [], extract: [] };
 let pages: Record<string, { title?: string | null; text: string } | null> = {};
 let searchResults: (call: SearchCall) => SearchHit[] = () => [];
+// Extract calls that include one of these URLs throw.
+const throwFor = new Set<string>();
 
 vi.mock("@/lib/parallel", () => ({
   search: async (objective: string, queries: string[], options?: { includeDomains?: string[] }) => {
@@ -39,6 +41,7 @@ vi.mock("@/lib/parallel", () => ({
   ): Promise<PageRead[]> => {
     if (wanted.length === 0) return [];
     calls.extract.push({ urls: wanted.map((p) => p.url), objective });
+    if (wanted.some((p) => throwFor.has(p.url))) throw new Error("Extract exploded");
     return wanted.map(({ url, role }) => {
       const page = pages[url];
       return page
@@ -132,6 +135,7 @@ beforeEach(() => {
   calls.extract = [];
   pages = {};
   searchResults = acmeSearch;
+  throwFor.clear();
 });
 
 const req = (company: string | null, jobLink = parseJobLink(MESSY_LINKEDIN)) => ({
@@ -736,5 +740,39 @@ Our client seeks a product designer to shape its customer apps. ${FILLER_NW}`;
       text: "The client company isn't named. Northwind Group posted this job for a client it doesn't name, so only Northwind Group was checked.",
       url: null,
     });
+  });
+});
+
+describe("optional careers reads", () => {
+  it("returns the rest of the result when the linked job board read throws", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    acmePages(careersText("See every open role and apply: [Open roles](https://jobs.ashbyhq.com/acme)."));
+    throwFor.add("https://jobs.ashbyhq.com/acme");
+    const r = (await runCheck(req(null))) as CheckReport;
+    expect(r.status).toBe("ok");
+    expect(r.officialDomain).toBe("acme.example");
+    expect(r.couldntFind).toContainEqual({
+      kind: "couldnt_check",
+      text: "Couldn't read jobs.ashbyhq.com/acme.",
+      url: "https://jobs.ashbyhq.com/acme",
+    });
+    // The careers page itself was still read; the job isn't on it.
+    expect(r.job?.careers).toBe("not_listed");
+    vi.restoreAllMocks();
+  });
+
+  it("reads a bare short link in an aggregator posting as the employer's careers page", () => {
+    const link = parseJobLink("https://www.azjobconnection.gov/jobs/7630570");
+    if (link?.kind !== "aggregator") throw new Error("expected an aggregator link");
+    expect(
+      parseAggregatorPosting(
+        {
+          ok: true,
+          title: "Product Designer - AZ Job Connection",
+          text: "# Product Designer\n\nat Northwind Group in Phoenix, Arizona, United States\n\nShortcut: careers.northwind.example/3869AO\n\nEmail jobs@northwind.example",
+        },
+        link,
+      ),
+    ).toMatchObject({ employer: "Northwind Group", site: "northwind.example", careersUrl: "https://careers.northwind.example/3869AO" });
   });
 });

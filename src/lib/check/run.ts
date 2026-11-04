@@ -11,6 +11,7 @@ import {
   websiteFieldDomain,
   type JobLink,
 } from "./job-link";
+import { CheckStepError, step } from "./errors";
 import { findOfficialDomain, planReads } from "./official";
 import { buildReport, type JobInput } from "./report";
 import { LINKEDIN_DOMAIN } from "./domain-lists";
@@ -53,6 +54,48 @@ function warningSearch(company: string, subject: string, senderDomain: string | 
   return { queries, hits };
 }
 
+// A missing API key fails the whole check; any other failure of an optional
+// step is survivable.
+function isConfigError(error: unknown): boolean {
+  const inner = error instanceof CheckStepError ? error.cause : error;
+  return inner instanceof Error && inner.message === "Search is not configured.";
+}
+
+// A search limited to one domain. If the API refuses the domain filter, the
+// search runs without it. Either way only results on that domain are kept,
+// so a claimed website is still only checked against its own pages.
+async function pinnedSearch(objective: string, queries: string[], domain: string): Promise<SearchHit[]> {
+  let hits: SearchHit[];
+  try {
+    hits = await search(objective, queries, { includeDomains: [domain] });
+  } catch (error) {
+    if (isConfigError(error)) throw error;
+    console.error("Domain-limited search failed; retrying without the domain filter", {
+      name: error instanceof Error ? error.name : typeof error,
+      message: error instanceof Error ? error.message.slice(0, 200) : "",
+    });
+    hits = await search(objective, queries);
+  }
+  return hits.filter((h) => registrableDomain(h.url) === domain);
+}
+
+// Reads pages for the careers check. These reads are optional: if the call
+// throws, the pages count as unreadable and the check goes on.
+async function optionalReads(
+  pages: ReadonlyArray<{ url: string; role: PageRead["role"] }>,
+  objective: string,
+): Promise<PageRead[]> {
+  try {
+    return await extract(pages, CAREERS_MAX_AGE, objective);
+  } catch (error) {
+    if (isConfigError(error)) throw error;
+    console.error("Careers read failed; continuing without it", {
+      name: error instanceof Error ? error.name : typeof error,
+    });
+    return pages.map(({ url, role }) => ({ url, role, ok: false, title: null, publishDate: null, text: "" }));
+  }
+}
+
 // The company's website as its LinkedIn company page states it (the Website
 // field), from the search excerpt or else from reading the page.
 async function linkedInWebsite(
@@ -90,10 +133,8 @@ export async function runCheck(req: CheckRequest): Promise<CheckResponse> {
   let careersLink: string | null = null;
 
   if (link?.kind === "linkedin") {
-    const [posting] = await extract(
-      [{ url: link.url, role: "job" }],
-      CAREERS_MAX_AGE,
-      "The company name, the job title and when the job was posted",
+    const [posting] = await step("read LinkedIn posting", () =>
+      extract([{ url: link.url, role: "job" }], CAREERS_MAX_AGE, "The company name, the job title and when the job was posted"),
     );
     const parsed = parseLinkedInPosting(posting);
     if (!parsed) return { status: "need_more_detail", message: LINKEDIN_UNREADABLE_MESSAGE };
@@ -120,22 +161,32 @@ export async function runCheck(req: CheckRequest): Promise<CheckResponse> {
       warnings = warningSearch(company, company, senderDomain);
       const pageQuery = `${company} LinkedIn company page`;
       extraSearches.push(pageQuery);
-      const pageHits = await search(
-        `Find ${company}'s company page on LinkedIn`,
-        [pageQuery],
-        { includeDomains: [LINKEDIN_DOMAIN] },
-      );
-      const site = await linkedInWebsite(company, parsed.companySlug, pageHits);
-      claimed = site.domain;
-      if (site.page) extraHits.push(site.page);
+      // Optional: without the company page there is just no website claim.
+      try {
+        const pageHits = await step("search LinkedIn company page", () =>
+          pinnedSearch(`Find ${company}'s company page on LinkedIn`, [pageQuery], LINKEDIN_DOMAIN),
+        );
+        const site = await step("read LinkedIn company page", () =>
+          linkedInWebsite(company, parsed.companySlug, pageHits),
+        );
+        claimed = site.domain;
+        if (site.page) extraHits.push(site.page);
+      } catch (error) {
+        if (isConfigError(error)) throw error;
+        console.error("LinkedIn company page lookup failed; continuing without a website claim", {
+          name: error instanceof CheckStepError && error.cause instanceof Error ? error.cause.name : "unknown",
+        });
+      }
     }
   } else if (link?.kind === "board") {
-    const [posting] = await extract(
-      [{ url: link.url, role: "job" }],
-      CAREERS_MAX_AGE,
-      "The job title, the company name, its website, and whether the job is still open",
+    const [posting] = await step("read job board posting", () =>
+      extract(
+        [{ url: link.url, role: "job" }],
+        CAREERS_MAX_AGE,
+        "The job title, the company name, its website, and whether the job is still open",
+      ),
     );
-    const info = boardPostingInfo(link, posting);
+    const info = await step("parse job board posting", () => boardPostingInfo(link, posting));
     company = info.company;
     jobTitle = jobTitle ?? info.title;
     claimed = info.site;
@@ -149,12 +200,14 @@ export async function runCheck(req: CheckRequest): Promise<CheckResponse> {
     jobReads.push(posting);
   } else if (link?.kind === "aggregator") {
     // Check the employer the posting names, never the site it is on.
-    const [posting] = await extract(
-      [{ url: link.url, role: "job" }],
-      CAREERS_MAX_AGE,
-      "The employer's name, the job title, the employer's own website or careers page, and whether the job is still open",
+    const [posting] = await step("read aggregator posting", () =>
+      extract(
+        [{ url: link.url, role: "job" }],
+        CAREERS_MAX_AGE,
+        "The employer's name, the job title, the employer's own website or careers page, and whether the job is still open",
+      ),
     );
-    const info = parseAggregatorPosting(posting, link);
+    const info = await step("parse aggregator posting", () => parseAggregatorPosting(posting, link));
     if (!info) return { status: "need_more_detail", message: NO_EMPLOYER_MESSAGE };
     company = info.employer;
     jobTitle = jobTitle ?? info.title;
@@ -183,53 +236,67 @@ export async function runCheck(req: CheckRequest): Promise<CheckResponse> {
   warnings ??= warningSearch(company, subject, senderDomain);
 
   const officialQueries = [`${company} official website careers`, `${company} recruiting fraud notice email`];
+  const officialObjective = `Find ${subject}'s official website, careers page, and any page where the company says which email addresses or domains its recruiters use or warns about recruiting fraud`;
   const [officialHits, warningHits] = await Promise.all([
-    search(
-      `Find ${subject}'s official website, careers page, and any page where the company says which email addresses or domains its recruiters use or warns about recruiting fraud`,
-      officialQueries,
-      pin ? { includeDomains: [pin] } : {},
+    step("search official presence", () =>
+      pin ? pinnedSearch(officialObjective, officialQueries, pin) : search(officialObjective, officialQueries),
     ),
-    warnings.hits,
+    step("search warnings", () => warnings!.hits),
   ]);
 
-  const found = findOfficialDomain(company, req.website, officialHits, senderDomain);
+  const found = await step("find official domain", () =>
+    findOfficialDomain(company, req.website, officialHits, senderDomain),
+  );
   if (found.status === "ambiguous") {
     return { status: "need_more_detail", message: NEED_MORE_DETAIL_MESSAGE };
   }
 
   let reads: PageRead[] = [];
   if (found.status === "found") {
-    const planned = planReads(company, found.domain, officialHits, warningHits, req.locale);
-    // The careers page the posting links to is read for the careers check.
-    if (
-      careersLink &&
-      registrableDomain(careersLink) === found.domain &&
-      !planned.some((p) => pageKey(p.url) === pageKey(careersLink!))
-    ) {
-      planned.unshift({ url: careersLink, role: "careers" });
-    }
+    const domain = found.domain;
+    const planned = await step("plan page reads", () =>
+      planReads(company, domain, officialHits, warningHits, req.locale),
+    );
     const objective = `Which email addresses or domains ${company}'s recruiters use, and any recruiting fraud notice${
       jobTitle ? `, and whether the job "${jobTitle}" is listed` : ""
     }`;
-    const batches = await Promise.all([
-      extract(planned.filter((p) => p.role === "careers"), CAREERS_MAX_AGE, objective),
-      extract(planned.filter((p) => p.role !== "careers"), FRAUD_MAX_AGE, objective),
-    ]);
-    reads = batches.flat();
+    // The careers page the posting links to is read for the careers check,
+    // on its own so a failure there can't take the other reads with it.
+    const postingCareers =
+      careersLink &&
+      registrableDomain(careersLink) === domain &&
+      !planned.some((p) => pageKey(p.url) === pageKey(careersLink!))
+        ? careersLink
+        : null;
+    const batches = await step("read official pages", () =>
+      Promise.all([
+        extract(planned.filter((p) => p.role === "careers"), CAREERS_MAX_AGE, objective),
+        extract(planned.filter((p) => p.role !== "careers"), FRAUD_MAX_AGE, objective),
+        postingCareers ? optionalReads([{ url: postingCareers, role: "careers" }], objective) : [],
+      ]),
+    );
+    // The posting's own careers link first: it is the page for this job.
+    reads = [...batches[2], ...batches[0], ...batches[1]];
 
     // Follow the company's own links to its job board to look for the job.
+    // Optional: a failure here only means the careers check can't be done.
     if (jobTitle) {
-      const seen = new Set([...reads, ...jobReads].map((r) => pageKey(r.url)));
-      const board = linkedBoardPages(reads, found.domain, link).find((url) => !seen.has(pageKey(url)));
-      if (board) {
-        reads.push(
-          ...(await extract([{ url: board, role: "careers" }], CAREERS_MAX_AGE, `Whether the job "${jobTitle}" is listed`)),
-        );
+      try {
+        const seen = new Set([...reads, ...jobReads].map((r) => pageKey(r.url)));
+        const board = linkedBoardPages(reads, domain, link).find((url) => !seen.has(pageKey(url)));
+        if (board) {
+          reads.push(...(await optionalReads([{ url: board, role: "careers" }], `Whether the job "${jobTitle}" is listed`)));
+        }
+      } catch (error) {
+        if (isConfigError(error)) throw error;
+        console.error("Following the job board link failed; continuing without it", {
+          name: error instanceof Error ? error.name : typeof error,
+        });
       }
     }
   }
 
-  return buildReport({
+  return step("build report", () => buildReport({
     company,
     website: req.website,
     senderAddress: req.senderAddress,
@@ -241,5 +308,5 @@ export async function runCheck(req: CheckRequest): Promise<CheckResponse> {
     locale: req.locale,
     searches: [...extraSearches, ...officialQueries, ...warnings.queries],
     job,
-  });
+  }));
 }

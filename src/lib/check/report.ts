@@ -400,7 +400,14 @@ export function buildReport(input: CheckInput): CheckResponse {
         ((officialDomain && registrableDomain(r.url) === officialDomain) ||
           (hiringPlatform(r.url) !== null && links.linkedBoards.has(boardKey(r.url) ?? ""))),
     );
-    const careers = checkCareers(input.job.title, listings, posting);
+    // Optional: if the careers check itself fails, it is reported as
+    // "couldn't check" and the rest of the result still comes back.
+    let careers: ReturnType<typeof checkCareers>;
+    try {
+      careers = checkCareers(input.job.title, listings, posting);
+    } catch {
+      careers = { result: "couldnt_check", url: null };
+    }
     const isLinkedIn = input.job.site === "LinkedIn";
     job = {
       title: input.job.title,

@@ -11,6 +11,7 @@ import {
   hiringPlatform,
   hostOf,
   isGovernment,
+  isRealDomain,
   jobAggregator,
   registrableDomain,
 } from "./domains";
@@ -362,6 +363,20 @@ function employerUnderHeading(lines: string[]): string | null {
   return null;
 }
 
+// Links written without a scheme ("Shortcut: careers.northwind.example/3869AO"),
+// as https:// links. Email addresses and links already written with a
+// scheme are skipped.
+function bareLinksIn(markdown: string): string[] {
+  const text = plainText(markdown);
+  const out: string[] = [];
+  for (const m of text.matchAll(/(?<![\w@/.:-])((?:[a-z0-9-]+\.)+[a-z]{2,})(\/[^\s<>()[\]"'`]*)?/gi)) {
+    const host = m[1].toLowerCase();
+    if (!isRealDomain(host)) continue;
+    out.push(`https://${host}${(m[2] ?? "").replace(/[.,;:!?]+$/, "")}`);
+  }
+  return out;
+}
+
 export type AggregatorPosting = {
   // The employer the posting names, never the site it is on.
   employer: string;
@@ -419,18 +434,25 @@ export function parseAggregatorPosting(
   const target = compactName(coreName(employer));
   let site: string | null = null;
   let careersUrl: string | null = null;
-  for (const href of linksIn(body)) {
+  for (const href of [...linksIn(body), ...bareLinksIn(body)]) {
     const domain = registrableDomain(href);
     if (!domain || domain === link.domain || isThirdParty(domain)) continue;
     const label = (domainLabel(domain) ?? "").replace(/-/g, "");
     if (label.length < 2 || !(label.includes(target) || target.includes(label))) continue;
     if (site && site !== domain) continue;
     site = domain;
-    if (!careersUrl && CAREERS_PATH.test(`${hostOf(href) ?? ""}${new URL(href).pathname}`)) {
-      const clean = new URL(href);
-      clean.search = "";
-      clean.hash = "";
-      careersUrl = clean.toString();
+    if (!careersUrl) {
+      let clean: URL | null = null;
+      try {
+        clean = new URL(href);
+      } catch {
+        // Not a usable link; it still counts for the domain.
+      }
+      if (clean && CAREERS_PATH.test(`${clean.hostname}${clean.pathname}`)) {
+        clean.search = "";
+        clean.hash = "";
+        careersUrl = clean.toString();
+      }
     }
   }
 
@@ -527,6 +549,13 @@ export function linkedBoardPages(
 const CLOSED =
   /\b(no longer (?:available|accepting applications|open|active|being accepted|posted)|(?:position|job|role|posting|vacancy|opening) (?:has been|is|was) (?:filled|closed|expired|removed)|(?:job|role|position|posting) (?:has )?(?:closed|expired)|applications (?:are |have )?closed)\b/i;
 
+const LOADING = /\b(please wait|loading\s*(?:\.\.\.|…)|enable javascript|javascript is (?:required|disabled))/i;
+
+// True for a page whose listings hadn't loaded when it was read.
+export function looksUnloaded(text: string): boolean {
+  return LOADING.test(plainText(text));
+}
+
 export function saysClosed(text: string): boolean {
   return CLOSED.test(plainText(text));
 }
@@ -573,6 +602,9 @@ export function checkCareers(
     const near = found.text.slice(Math.max(0, found.at - 150), found.at + found.length + 150);
     return { result: saysClosed(near) ? "closed" : "listed", url: page.url };
   }
-  if (readable.length) return { result: "not_listed", url: readable[0].url };
+  // A page still showing a loading spinner hasn't shown its listings, so it
+  // can't show the job is missing.
+  const loaded = readable.filter((p) => !looksUnloaded(p.text));
+  if (loaded.length) return { result: "not_listed", url: loaded[0].url };
   return { result: "couldnt_check", url: null };
 }
