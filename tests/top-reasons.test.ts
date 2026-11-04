@@ -195,7 +195,7 @@ describe("top reasons on the page", () => {
   });
 
   it("leaves out +N more on saved results without every reason", () => {
-    const html = render(withReasons("mixed", MIXED_REASONS, { moreReasons: { caution: 2 } }));
+    const html = render(withReasons("mixed", MIXED_REASONS, { allReasons: undefined, moreReasons: { caution: 2 } }));
     expect(text(html)).not.toContain("more reason");
   });
 
