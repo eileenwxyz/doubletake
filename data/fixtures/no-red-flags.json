@@ -22,6 +22,22 @@
       "sourceType": "Official",
       "sourceUrl": "https://www.tidewaterhealth.example/",
       "age": "Date unknown"
+    }
+  ],
+  "allReasons": [
+    {
+      "direction": "reassures",
+      "text": "The sender's domain tidewaterhealth.example is on the recruiting list Tidewater Health publishes on tidewaterhealth.example.",
+      "sourceType": "Official",
+      "sourceUrl": "https://www.tidewaterhealth.example/careers/candidate-safety",
+      "age": "Published 2026-06-10 (4 months ago)"
+    },
+    {
+      "direction": "reassures",
+      "text": "tidewaterhealth.example is Tidewater Health's official website.",
+      "sourceType": "Official",
+      "sourceUrl": "https://www.tidewaterhealth.example/",
+      "age": "Date unknown"
     },
     {
       "direction": "reassures",
@@ -31,6 +47,7 @@
       "age": "Date unknown"
     }
   ],
+  "moreReasons": {},
   "couldntFind": [],
   "sources": [
     { "url": "https://www.tidewaterhealth.example/", "type": "Official", "publishDate": null },

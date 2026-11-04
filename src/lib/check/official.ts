@@ -16,6 +16,7 @@ import {
   isGovernment,
   jobAggregator,
   isReportDomain,
+  pageKey,
   registrableDomain,
 } from "./domains";
 import {
@@ -31,10 +32,22 @@ export type OfficialDomain =
   | { status: "ambiguous" }
   | { status: "none" };
 
-// Domains that can't be a company's own site.
-export function isThirdParty(domain: string): boolean {
+// A large shared site still belongs to the company it is named after: the
+// company's core name is exactly the domain's label (Google and google.com,
+// LinkedIn and linkedin.com). Only shared sites get this; a free email
+// provider, hiring platform or directory never becomes a company's domain.
+export function ownsSharedSite(domain: string, company: string): boolean {
+  if (!SHARED_SITES.has(domain)) return false;
+  const label = (domainLabel(domain) ?? "").replace(/-/g, "");
+  const name = compactName(coreName(company));
+  return label.length >= 2 && label === name;
+}
+
+// Domains that can't be a company's own site. With the company's name, a
+// shared site named after that company is allowed (see ownsSharedSite).
+export function isThirdParty(domain: string, company?: string): boolean {
   return (
-    SHARED_SITES.has(domain) ||
+    (SHARED_SITES.has(domain) && !(company && ownsSharedSite(domain, company))) ||
     isReportDomain(domain) ||
     ADVICE_SITES.has(domain) ||
     AUTOMATED_RATING_SITES.has(domain) ||
@@ -84,7 +97,7 @@ export function findOfficialDomain(
   const counts = new Map<string, number>();
   for (const hit of dedupeByUrl(hits)) {
     const domain = registrableDomain(hit.url);
-    if (!domain || isThirdParty(domain)) continue;
+    if (!domain || isThirdParty(domain, company)) continue;
     // The company's own pages may leave off "Group", "Inc" and the like.
     if (!namesCompanyLoosely(`${hit.title ?? ""}\n${hit.text}`, coreName(company))) continue;
     counts.set(domain, (counts.get(domain) ?? 0) + 1);
@@ -119,6 +132,49 @@ const FRAUD_PAGE =
   /(fraud|scam|phishing|impersonat|beware|security|recruit\w*[-_ ]?(notice|warning|alert))/i;
 const CAREERS_PAGE = /(careers?|jobs?|join[-_ ]?us|work[-_ ]with[-_ ]us|opportunities|hiring)/i;
 
+// How strongly a page looks like the company's recruiting fraud or verified
+// email page: 2 when its path or title says fraud, scam, phishing or
+// impersonation (/careers/recruitment-fraud), 0 for a contact page, 1
+// otherwise. Used to prefer the real notice over a contact page that only
+// mentions security.
+const STRONG_FRAUD = /(fraud|scam|phishing|impersonat)/i;
+const CONTACT_PAGE = /contact/i;
+
+export function fraudPageScore(url: string, title: string | null): number {
+  let path = url;
+  try {
+    path = new URL(url).pathname;
+  } catch {
+    // keep the raw string
+  }
+  if (STRONG_FRAUD.test(path) || STRONG_FRAUD.test(title ?? "")) return 2;
+  if (CONTACT_PAGE.test(path)) return 0;
+  return 1;
+}
+
+// The pages in order of fraudPageScore, best first; ties keep their order.
+export function byFraudScore<T extends { url: string; title: string | null }>(pages: readonly T[]): T[] {
+  return pages
+    .map((page, index) => ({ page, index, score: fraudPageScore(page.url, page.title) }))
+    .sort((a, b) => b.score - a.score || a.index - b.index)
+    .map((x) => x.page);
+}
+
+// From a search limited to the official domain, the page to read for the
+// company's recruiting list: the best-looking fraud or verified-email page
+// not read yet.
+export function pickListPage(
+  hits: readonly SearchHit[],
+  officialDomain: string,
+  alreadyRead: readonly string[],
+): string | null {
+  const read = new Set(alreadyRead.map(pageKey));
+  const fresh = dedupeByUrl([...hits]).filter(
+    (h) => registrableDomain(h.url) === officialDomain && !read.has(pageKey(h.url)),
+  );
+  return byFraudScore(fresh)[0]?.url ?? null;
+}
+
 export function officialPageRole(hit: SearchHit): PageRole {
   const label = `${hit.url} ${hit.title ?? ""}`;
   if (FRAUD_PAGE.test(label)) return "fraud";
@@ -147,7 +203,11 @@ export function planReads(
   );
   const byRole = (role: PageRole) =>
     own.filter((hit) => officialPageRole(hit) === role).map((hit) => ({ url: hit.url, role }));
-  const fraud = byRole("fraud");
+  // The real fraud notice before a contact page that only mentions security.
+  const fraud = byFraudScore(own.filter((hit) => officialPageRole(hit) === "fraud")).map((hit) => ({
+    url: hit.url,
+    role: "fraud" as const,
+  }));
   const careers = byRole("careers");
   const home = byRole("home");
 

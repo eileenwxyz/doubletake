@@ -12,7 +12,8 @@ import {
   type JobLink,
 } from "./job-link";
 import { CheckStepError, step } from "./errors";
-import { findOfficialDomain, planReads } from "./official";
+import { findOfficialDomain, pickListPage, planReads } from "./official";
+import { findRecruitingList } from "./text";
 import { buildReport, type JobInput } from "./report";
 import { LINKEDIN_DOMAIN } from "./domain-lists";
 import { pageKey, registrableDomain } from "./domains";
@@ -84,9 +85,10 @@ async function pinnedSearch(objective: string, queries: string[], domain: string
 async function optionalReads(
   pages: ReadonlyArray<{ url: string; role: PageRead["role"] }>,
   objective: string,
+  maxAge = CAREERS_MAX_AGE,
 ): Promise<PageRead[]> {
   try {
-    return await extract(pages, CAREERS_MAX_AGE, objective);
+    return await extract(pages, maxAge, objective);
   } catch (error) {
     if (isConfigError(error)) throw error;
     console.error("Careers read failed; continuing without it", {
@@ -252,6 +254,8 @@ export async function runCheck(req: CheckRequest): Promise<CheckResponse> {
   }
 
   let reads: PageRead[] = [];
+  const listHits: SearchHit[] = [];
+  const listSearches: string[] = [];
   if (found.status === "found") {
     const domain = found.domain;
     const planned = await step("plan page reads", () =>
@@ -278,6 +282,38 @@ export async function runCheck(req: CheckRequest): Promise<CheckResponse> {
     // The posting's own careers link first: it is the page for this job.
     reads = [...batches[2], ...batches[0], ...batches[1]];
 
+    // The sender uses the company's own domain but the pages read carry no
+    // recruiting list: look once more, on the official domain only, for the
+    // recruiting fraud or verified email page and read the top result, so
+    // the answer doesn't depend on which page the first search surfaced.
+    // Optional: a failure here leaves the result as it was.
+    const hasList = reads.some(
+      (r) => r.ok && registrableDomain(r.url) === domain && findRecruitingList(r.text),
+    );
+    if (senderDomain && registrableDomain(senderDomain) === domain && !hasList) {
+      const query = `${company} recruitment fraud verified recruiter email domains`;
+      listSearches.push(query);
+      try {
+        const hits = await step("search recruiting list page", () =>
+          pinnedSearch(
+            `Find ${company}'s page about recruiting fraud that says which email domains its recruiters use`,
+            [query],
+            domain,
+          ),
+        );
+        listHits.push(...hits);
+        const page = pickListPage(hits, domain, reads.map((r) => r.url));
+        if (page) {
+          reads.push(...(await optionalReads([{ url: page, role: "fraud" }], objective, FRAUD_MAX_AGE)));
+        }
+      } catch (error) {
+        if (isConfigError(error)) throw error;
+        console.error("Recruiting list search failed; continuing without it", {
+          name: error instanceof CheckStepError && error.cause instanceof Error ? error.cause.name : "unknown",
+        });
+      }
+    }
+
     // Follow the company's own links to its job board to look for the job.
     // Optional: a failure here only means the careers check can't be done.
     if (jobTitle) {
@@ -301,12 +337,12 @@ export async function runCheck(req: CheckRequest): Promise<CheckResponse> {
     website: req.website,
     senderAddress: req.senderAddress,
     senderDomain,
-    officialHits: [...officialHits, ...extraHits],
+    officialHits: [...officialHits, ...extraHits, ...listHits],
     warningHits,
     reads: [...jobReads, ...reads],
     now: new Date(),
     locale: req.locale,
-    searches: [...extraSearches, ...officialQueries, ...warnings.queries],
+    searches: [...extraSearches, ...officialQueries, ...warnings.queries, ...listSearches],
     job,
   }));
 }

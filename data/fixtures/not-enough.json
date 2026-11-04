@@ -12,6 +12,15 @@
       "sourceType": "Other",
       "sourceUrl": null,
       "age": "Date unknown"
+    }
+  ],
+  "allReasons": [
+    {
+      "direction": "neutral",
+      "text": "No official domain for Brightline Ventures was found to compare brightline-careers.example with.",
+      "sourceType": "Other",
+      "sourceUrl": null,
+      "age": "Date unknown"
     },
     {
       "direction": "neutral",
@@ -21,6 +30,7 @@
       "age": "Date unknown"
     }
   ],
+  "moreReasons": {},
   "couldntFind": [
     {
       "kind": "not_published",

@@ -19,6 +19,22 @@
       "sourceType": "Official",
       "sourceUrl": "https://quillmark.example/",
       "age": "Date unknown"
+    }
+  ],
+  "allReasons": [
+    {
+      "direction": "caution",
+      "text": "A post on jobseekers-forum.example reports a problem involving Quillmark Studio by name.",
+      "sourceType": "Report",
+      "sourceUrl": "https://jobseekers-forum.example/t/quillmark-studio-asked-me-to-buy-a-laptop",
+      "age": "Published 2026-10-02 (32 days ago)"
+    },
+    {
+      "direction": "reassures",
+      "text": "quillmark.example is Quillmark Studio's official website.",
+      "sourceType": "Official",
+      "sourceUrl": "https://quillmark.example/",
+      "age": "Date unknown"
     },
     {
       "direction": "reassures",
@@ -28,6 +44,7 @@
       "age": "Date unknown"
     }
   ],
+  "moreReasons": {},
   "couldntFind": [
     {
       "kind": "couldnt_check",

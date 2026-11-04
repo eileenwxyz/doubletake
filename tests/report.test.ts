@@ -99,7 +99,15 @@ describe("unreadable official page", () => {
 describe("reasons and sources", () => {
   it("returns at most 3 reasons with unique URLs, ranked sender first", () => {
     const r = ok(withSender("recruiter@acme.example"));
-    expect(r.reasons).toHaveLength(3);
+    // The directory listings are weaker than the rest, so they stay in
+    // "See all sources" rather than filling a third place.
+    expect(r.reasons.map((x) => x.text)).toEqual([
+      "The sender's domain acme.example is on the recruiting list Acme publishes on acme.example.",
+      "acme.example is Acme's official website.",
+    ]);
+    expect(r.allReasons?.map((x) => x.text)).toContain(
+      "Acme has company listings on linkedin.com and crunchbase.com.",
+    );
     const urls = r.reasons.map((x) => x.sourceUrl);
     expect(new Set(urls).size).toBe(urls.length);
     for (const reason of r.reasons) {

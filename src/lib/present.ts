@@ -4,9 +4,11 @@
 import type {
   CheckApiError,
   CheckReport,
+  Direction,
   Reason,
   Source,
   SourceType,
+  Verdict,
 } from "@/lib/check/types";
 import { MONTHLY_CAP_ERROR, SOURCE_TYPE_LABELS } from "@/lib/copy";
 
@@ -70,7 +72,32 @@ export function groupSources(sources: readonly Source[]): SourceGroup[] {
 
 // How many distinct sources the top reasons cite.
 export function citedSources(reasons: readonly Reason[]): number {
-  return new Set(reasons.map((r) => r.sourceUrl).filter((u): u is string => u !== null)).size;
+  return new Set(
+    reasons.flatMap((r) => [r.sourceUrl, ...(r.alsoFrom ?? []).map((s) => s.url)]).filter(
+      (u): u is string => u !== null,
+    ),
+  ).size;
+}
+
+// ---- Reasons ----
+
+// The order of the direction groups: what the verdict warns about first,
+// or what reassures first for "no red flags".
+export function directionOrder(verdict: Verdict): Direction[] {
+  return verdict === "no_red_flags"
+    ? ["reassures", "neutral", "caution"]
+    : ["caution", "reassures", "neutral"];
+}
+
+export type ReasonGroup = { direction: Direction; reasons: Reason[] };
+
+// Reasons grouped by direction, groups in the verdict's order, reasons in
+// their given (rank) order, empty groups left out. Grouping only orders the
+// reasons; it never adds or drops one.
+export function groupReasons(reasons: readonly Reason[], verdict: Verdict): ReasonGroup[] {
+  return directionOrder(verdict)
+    .map((direction) => ({ direction, reasons: reasons.filter((r) => r.direction === direction) }))
+    .filter((g) => g.reasons.length > 0);
 }
 
 // ---- API responses ----

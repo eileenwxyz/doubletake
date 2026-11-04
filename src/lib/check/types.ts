@@ -44,6 +44,16 @@ export type Reason = {
   sourceUrl: string | null;
   // "Published 2026-10-28 (6 days ago)" or "Date unknown".
   age: string;
+  // The other sources for a reason that states the same fact from more than
+  // one page ("Listed on 2 of Acme's own pages"). Absent for single-source
+  // reasons and on results saved before merged reasons.
+  alsoFrom?: ReasonSource[];
+};
+
+export type ReasonSource = {
+  url: string;
+  sourceType: SourceType;
+  age: string;
 };
 
 export type CouldntFind = {
@@ -70,7 +80,16 @@ export type CheckReport = {
   verdict: Verdict;
   subtitle: string | null;
   companySays: { quote: string; domain: string } | null;
+  // The top reasons: every reason that decided the verdict, every reason
+  // that disagrees with it, then up to 3 in all by strength. In strength
+  // order; the page groups them by direction.
   reasons: Reason[];
+  // Every reason, in strength order, for "See all sources". Absent on
+  // results saved before it was added.
+  allReasons?: Reason[];
+  // For "+N more reasons": how many reasons left out of the top reasons are
+  // as strong as one shown in the same direction group.
+  moreReasons?: Partial<Record<Direction, number>>;
   couldntFind: CouldntFind[];
   sources: Source[];
   officialDomain: string | null;

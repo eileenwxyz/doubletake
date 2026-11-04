@@ -22,11 +22,21 @@ The server then:
 3. Reads up to 3 official pages and up to 2 company-specific warning pages in
    full with Parallel's Extract API (careers pages no older than 10 minutes,
    other pages no older than 1 day). An empty or near-empty read counts as
-   "couldn't read", never as "nothing there".
+   "couldn't read", never as "nothing there". Pages whose path or title says
+   fraud or scam are preferred over contact pages. If the recruiter's email
+   is on the company's own domain and none of those pages lists its
+   recruiting email domains, one more search limited to that domain looks
+   for the recruiting fraud or verified email page and reads the top result.
 4. Applies fixed rules to the sender's domain and to each source, and returns a
    verdict ("strong_warning", "mixed", "no_red_flags" or "not_enough"), an
    optional subtitle, the company's own words about its recruiting addresses,
-   the top 3 reasons, what couldn't be found, and every source.
+   the top reasons, what couldn't be found, and every source.
+5. Picks the top reasons: every reason the verdict was decided on and every
+   reason that disagrees with it, then up to 3 in all by strength. Reasons
+   stating the same fact from several pages become one line with every link,
+   and directory listings and automated ratings stay in "See all sources"
+   when anything stronger exists. The page groups them by direction
+   (Caution first, or Reassures first for "No red flags found").
 
 The rules live in `src/lib/check/`; every hard-coded domain list (hiring
 software, free email providers, regulators, rating sites, directories, forums)
