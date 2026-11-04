@@ -107,6 +107,9 @@ export type JobResult = {
   posted: string | null;
   // True when the posting is on a job board the company's own site links to.
   postingOfficial: boolean;
+  // A staffing agency posted the job for a client it doesn't name; the
+  // agency is what was checked.
+  unnamedClient: boolean;
   careers: CareersResult;
   // The page the careers result comes from.
   careersUrl: string | null;

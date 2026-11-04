@@ -104,6 +104,9 @@ export type LinkedInPosting = {
   posted: string | null;
   // The company's LinkedIn page slug, when the posting links to it.
   companySlug: string | null;
+  // True when the poster is a staffing agency hiring for a client it
+  // doesn't name (see forUnnamedClient).
+  unnamedClient: boolean;
 };
 
 // Everything from these headings down is about other jobs and other people.
@@ -155,7 +158,36 @@ export function parseLinkedInPosting(read: Pick<PageRead, "ok" | "title" | "text
     title,
     posted: posted ? `${n} ${unit}${n === 1 ? "" : "s"} ago` : null,
     companySlug: companyLink ? decodeURIComponent(companyLink[3]).toLowerCase() : null,
+    unnamedClient: forUnnamedClient(company, body),
   };
+}
+
+// ---- Staffing agencies ----
+
+const AGENCY_NAME =
+  /\b(staffing|recruit\w*|talent|personnel|placements?|search|agency|workforce|resourcing|headhunt\w*)\b/i;
+const AGENCY_TEXT =
+  /\b(staffing (agency|firm|company|partner)|recruit(ment|ing) (agency|firm|company|partner|consultancy)|employment agency|placement (agency|firm)|talent (agency|partner|solutions firm)|headhunters?|executive search firm)\b/i;
+const HIDDEN_CLIENT =
+  /\b(confidential|undisclosed|unnamed|anonymous) (client|company|employer)\b|\bclient(?:'s)?(?: name)? (?:is|will be|remains|must remain) (?:kept )?(?:confidential|undisclosed)\b/i;
+// "a client", "our client", "one of our clients", with up to a few words
+// between ("our client, a leading insurer"). Checked separately for a name
+// right after it.
+const SOME_CLIENT = /\b(?:(?:a|an|our)\b[^.\n]{0,40}?\bclient\b|one of our\b[^.\n]{0,40}?\bclients\b)/giu;
+const NAME_FOLLOWS = /^\s*[,:(–-]?\s*\p{Lu}/u;
+
+// The poster is a staffing agency (its name or the posting says so) and the
+// posting says the job is for a client it doesn't name. "Our client, Acme
+// Corp, ..." names the client and doesn't count.
+export function forUnnamedClient(poster: string, text: string): boolean {
+  const flat = plainText(text);
+  if (!AGENCY_NAME.test(poster) && !AGENCY_TEXT.test(flat)) return false;
+  if (HIDDEN_CLIENT.test(flat)) return true;
+  for (const match of flat.matchAll(SOME_CLIENT)) {
+    const after = flat.slice((match.index ?? 0) + match[0].length);
+    if (!NAME_FOLLOWS.test(after)) return true;
+  }
+  return false;
 }
 
 // ---- LinkedIn company page ----
@@ -237,7 +269,7 @@ const BOARD_TITLE = [
 export function boardPostingInfo(
   link: Extract<JobLink, { kind: "board" }>,
   posting: PageRead | null,
-): { company: string; title: string | null; site: string | null } {
+): { company: string; title: string | null; site: string | null; unnamedClient: boolean } {
   const slugName = tidyName(link.slug.replace(/[-_.]+/g, " "));
   const titles = posting?.title ? [posting.title] : [];
   const company = properName(slugName, titles);
@@ -278,7 +310,12 @@ export function boardPostingInfo(
       }
     }
   }
-  return { company, title, site };
+  return {
+    company,
+    title,
+    site,
+    unnamedClient: posting?.ok ? forUnnamedClient(company, posting.text) : false,
+  };
 }
 
 // The job boards the company's own pages link to ("Apply" or "Open roles"

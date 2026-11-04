@@ -73,6 +73,10 @@ export type JobInput = {
   // "LinkedIn", or the job board's name ("Lever").
   site: string | null;
   posted: string | null;
+  // A staffing agency posted the job for a client it doesn't name. The
+  // agency is what gets checked; the unnamed client is not a warning sign
+  // (agencies often keep clients confidential).
+  unnamedClient?: boolean;
 };
 
 const MAX_REASONS = 3;
@@ -397,6 +401,7 @@ export function buildReport(input: CheckInput): CheckResponse {
       site: input.job.site,
       posted: input.job.posted,
       postingOfficial: postingType === "Official",
+      unnamedClient: input.job.unnamedClient ?? false,
       careers: careers.result,
       careersUrl: careers.url,
     };
@@ -497,6 +502,9 @@ export function buildReport(input: CheckInput): CheckResponse {
     }
   }
 
+  if (job?.unnamedClient) {
+    couldntFind.push({ kind: "couldnt_check", text: COULDNT_FIND.clientNotNamed(name), url: null });
+  }
   if (job && job.title && job.careers === "couldnt_check") {
     couldntFind.push({ kind: "couldnt_check", text: COULDNT_FIND.noJobListings(name), url: null });
   }

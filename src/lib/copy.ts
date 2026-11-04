@@ -165,6 +165,8 @@ export const COULDNT_FIND = {
     `${company} doesn't say which email domains its recruiters use on the pages checked.`,
   noFraudNotice: (company: string) =>
     `${company} doesn't publish a recruiting fraud notice on the pages checked.`,
+  clientNotNamed: (agency: string) =>
+    `The client company isn't named. ${agency} posted this job for a client it doesn't name, so only ${agency} was checked.`,
   noJobListings: (company: string) =>
     `Couldn't read ${company}'s own careers page or job board to look for this job.`,
 } as const;

@@ -92,7 +92,13 @@ export async function runCheck(req: CheckRequest): Promise<CheckResponse> {
     if (!parsed) return { status: "need_more_detail", message: LINKEDIN_UNREADABLE_MESSAGE };
     company = parsed.company;
     jobTitle = parsed.title;
-    job = { title: parsed.title, postingUrl: link.url, site: "LinkedIn", posted: parsed.posted };
+    job = {
+      title: parsed.title,
+      postingUrl: link.url,
+      site: "LinkedIn",
+      posted: parsed.posted,
+      unnamedClient: parsed.unnamedClient,
+    };
     // Only the name and title are kept; nothing else from the page.
     jobReads.push({
       url: link.url,
@@ -126,7 +132,13 @@ export async function runCheck(req: CheckRequest): Promise<CheckResponse> {
     company = info.company;
     jobTitle = jobTitle ?? info.title;
     claimed = info.site;
-    job = { title: jobTitle, postingUrl: link.url, site: link.platform, posted: null };
+    job = {
+      title: jobTitle,
+      postingUrl: link.url,
+      site: link.platform,
+      posted: null,
+      unnamedClient: info.unnamedClient,
+    };
     jobReads.push(posting);
   } else if (jobTitle) {
     job = { title: jobTitle, postingUrl: null, site: null, posted: null };

@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   boardPostingInfo,
   checkCareers,
+  forUnnamedClient,
   isUnsupportedJobSiteLink,
   parseJobLink,
   parseLinkedInPosting,
@@ -203,6 +204,7 @@ describe("LinkedIn posting", () => {
       title: "Senior Anvil Engineer",
       posted: "2 weeks ago",
       companySlug: "acme-example",
+      unnamedClient: false,
     });
   });
 
@@ -380,5 +382,79 @@ describe("careers check", () => {
     const page = read("https://careers.acme.example/", "careers", "Roles: SENIOR ANVIL ENGINEER - Payments");
     expect(checkCareers("Senior Anvil Engineer – Payments", [page], null).result).toBe("listed");
     expect(checkCareers("Senior Anvil Engineer (Remote)", [page], null).result).toBe("listed");
+  });
+});
+
+// ---- Staffing agencies hiring for an unnamed client ----
+
+describe("staffing agency posting for an unnamed client", () => {
+  it("spots an agency hiring for a client it doesn't name", () => {
+    expect(forUnnamedClient("Brightpath Staffing", "Our client, a leading insurer, is hiring an analyst.")).toBe(true);
+    expect(forUnnamedClient("Brightpath", "We are a staffing agency hiring on behalf of a confidential client.")).toBe(true);
+    expect(forUnnamedClient("Brightpath Recruiting", "One of our clients in Springfield needs an analyst.")).toBe(true);
+    expect(forUnnamedClient("Brightpath Staffing", "The client's name is kept confidential until interview.")).toBe(true);
+  });
+
+  it("doesn't count a named client or a company that isn't an agency", () => {
+    expect(forUnnamedClient("Brightpath Staffing", "Our client, Globex Corp, is hiring an analyst.")).toBe(false);
+    expect(forUnnamedClient("Brightpath Staffing", "We place analysts in permanent roles.")).toBe(false);
+    // An ordinary employer talking about its customers.
+    expect(forUnnamedClient("Acme", "You will support a client in the energy sector.")).toBe(false);
+  });
+
+  const AGENCY_LINK = "https://www.linkedin.com/jobs/view/4099999999";
+  const AGENCY_FILLER =
+    "Brightpath Staffing is a staffing agency that places analysts and engineers with employers across the region. " +
+    "We have placed thousands of candidates since we opened, and every open role is listed on our site.";
+
+  function agencyPages() {
+    pages = {
+      [AGENCY_LINK]: {
+        title: "Brightpath Staffing hiring Claims Analyst in Springfield | LinkedIn",
+        text: `# Claims Analyst\n\n[Brightpath Staffing](https://www.linkedin.com/company/brightpath-staffing) Springfield 3 days ago\n\nBrightpath Staffing is recruiting a Claims Analyst on behalf of a confidential client, a regional insurer. ${AGENCY_FILLER}\n\n## Similar jobs\n\n# Analyst\n\n[Globex](https://www.linkedin.com/company/globex-example)`,
+      },
+      "https://www.linkedin.com/company/brightpath-staffing/": {
+        text: "# Brightpath Staffing\n\nWebsite\n: https://www.brightpathstaffing.example/\n\nIndustry\n: Staffing and Recruiting",
+      },
+      "https://www.brightpathstaffing.example/jobs": { text: `# Open jobs at Brightpath Staffing\n\n${AGENCY_FILLER}\n\n- Claims Analyst · Springfield` },
+      "https://www.brightpathstaffing.example/": { text: `# Brightpath Staffing\n\n${AGENCY_FILLER}` },
+    };
+    searchResults = (call) => {
+      const pinned = call.options?.includeDomains ?? [];
+      if (pinned.includes("linkedin.com")) {
+        return [hit("https://www.linkedin.com/company/brightpath-staffing", "Brightpath Staffing | LinkedIn", "Brightpath Staffing. Staffing and Recruiting.")];
+      }
+      if (pinned.includes("brightpathstaffing.example")) {
+        return [
+          hit("https://www.brightpathstaffing.example/", "Brightpath Staffing | Staffing agency", "Brightpath Staffing places analysts."),
+          hit("https://www.brightpathstaffing.example/jobs", "Jobs | Brightpath Staffing", "Open jobs at Brightpath Staffing."),
+        ];
+      }
+      return [];
+    };
+  }
+
+  it("checks the agency and says the client couldn't be checked, without treating it as a warning", async () => {
+    agencyPages();
+    const r = (await runCheck(req(null, parseJobLink(AGENCY_LINK)))) as CheckReport;
+
+    expect(r.status).toBe("ok");
+    expect(r.companyName).toBe("Brightpath Staffing");
+    expect(r.officialDomain).toBe("brightpathstaffing.example");
+    expect(r.job).toMatchObject({ unnamedClient: true, careers: "listed" });
+    expect(r.couldntFind).toContainEqual({
+      kind: "couldnt_check",
+      text: "The client company isn't named. Brightpath Staffing posted this job for a client it doesn't name, so only Brightpath Staffing was checked.",
+      url: null,
+    });
+    expect(r.reasons.every((x) => x.direction !== "caution")).toBe(true);
+    expect(["strong_warning", "mixed"]).not.toContain(r.verdict);
+  });
+
+  it("adds no such item when the employer posts its own job", async () => {
+    acmePages(careersText("Open roles: Senior Anvil Engineer."));
+    const r = (await runCheck(req(null))) as CheckReport;
+    expect(r.job?.unnamedClient).toBe(false);
+    expect(r.couldntFind.some((c) => c.text.startsWith("The client company isn't named"))).toBe(false);
   });
 });
