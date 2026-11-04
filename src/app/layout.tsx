@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { SITE_NAME, TAGLINE } from "@/lib/copy";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -13,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Doubletake",
-  description: "Check who's really hiring.",
+  title: SITE_NAME,
+  description: TAGLINE,
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

@@ -1,7 +1,8 @@
 import {
+  ADVICE_SITES,
   AUTOMATED_RATING_SITES,
+  DEFAULT_LOCALE,
   REGULATORS,
-  REPORT_SITES,
   SHARED_SITES,
 } from "./domain-lists";
 import {
@@ -12,6 +13,7 @@ import {
   isDirectory,
   isFreeEmailProvider,
   isGovernment,
+  isReportDomain,
   registrableDomain,
 } from "./domains";
 import {
@@ -31,7 +33,8 @@ export type OfficialDomain =
 function isThirdParty(domain: string): boolean {
   return (
     SHARED_SITES.has(domain) ||
-    REPORT_SITES.has(domain) ||
+    isReportDomain(domain) ||
+    ADVICE_SITES.has(domain) ||
     AUTOMATED_RATING_SITES.has(domain) ||
     REGULATORS.has(domain) ||
     isGovernment(domain) ||
@@ -115,14 +118,16 @@ export const MAX_WARNING_READS = 2;
 
 // Chooses which pages to read in full: up to 3 official pages (fraud or
 // recruiting notice first, then careers) and up to 2 company-specific
-// warning pages.
+// warning pages. Of a page's language and region copies, the one in the
+// user's locale is read.
 export function planReads(
   company: string,
   officialDomain: string,
   officialHits: SearchHit[],
   warningHits: SearchHit[],
+  locale: string = DEFAULT_LOCALE,
 ): PlannedRead[] {
-  const own = dedupeByUrl(officialHits).filter(
+  const own = dedupeByUrl(officialHits, locale).filter(
     (hit) => registrableDomain(hit.url) === officialDomain,
   );
   const byRole = (role: PageRole) =>
@@ -139,7 +144,7 @@ export function planReads(
     official.push({ url: `https://${officialDomain}/`, role: "home" });
   }
 
-  const warnings = dedupeByUrl(warningHits)
+  const warnings = dedupeByUrl(warningHits, locale)
     .filter((hit) => registrableDomain(hit.url) !== officialDomain)
     .filter((hit) => {
       const text = `${hit.title ?? ""}\n${hit.text}`;

@@ -70,25 +70,36 @@ export const AUTOMATED_RATING_SITES: ReadonlySet<string> = new Set([
   "thesentari.com",
   "hastrust.com",
   "gridinsoft.com",
+  "jobscamscore.com",
 ]);
 
-// Company directories. A path prefix limits the match to company pages on
-// sites that also host other content.
-export const DIRECTORIES: ReadonlyArray<{ domain: string; pathPrefix?: string }> = [
+// A site, optionally limited to some of its pages. pathPrefix and pathPattern
+// are matched against the lower-case URL path.
+export type SitePages = { domain: string; pathPrefix?: string; pathPattern?: RegExp };
+
+// Company directories. A path limits the match to company pages on sites
+// that also host other content.
+export const DIRECTORIES: ReadonlyArray<SitePages> = [
   { domain: "linkedin.com", pathPrefix: "/company/" },
   { domain: "indeed.com", pathPrefix: "/cmp/" },
-  { domain: "bbb.org" },
+  // Company profiles only: /us/<state>/<city>/profile/<category>/<name>.
+  { domain: "bbb.org", pathPattern: /^\/us\/(?:[^/]+\/)+profile\// },
   { domain: "tracxn.com" },
   { domain: "crunchbase.com" },
 ];
 
 // Forums and review sites where people post first-hand reports.
-export const REPORT_SITES: ReadonlySet<string> = new Set([
-  "reddit.com",
-  "teamblind.com",
-  "quora.com",
-  "trustpilot.com",
-]);
+export const REPORT_SITES: ReadonlyArray<SitePages> = [
+  { domain: "reddit.com" },
+  { domain: "teamblind.com" },
+  { domain: "quora.com" },
+  { domain: "trustpilot.com" },
+  { domain: "facebook.com", pathPrefix: "/groups/" },
+];
+
+// Sites whose pages are general advice unless another rule matched first
+// (bbb.org scam studies and articles; its company profiles are directories).
+export const ADVICE_SITES: ReadonlySet<string> = new Set(["bbb.org"]);
 
 // Large shared sites that are never a company's own official domain, even
 // when many of their pages name the company.
@@ -133,7 +144,15 @@ export const TRACKING_PARAMS: ReadonlySet<string> = new Set([
   "igshid",
   "_hsenc",
   "_hsmi",
+  "inav",
+  "intlink",
 ]);
+
+// A leading path segment that only picks a language and region, such as
+// /en-us/ or /de-de/. Copies of a page that differ only in this segment are
+// one source.
+export const LOCALE_SEGMENT = /^[a-z]{2}-[a-z]{2}$/i;
+export const DEFAULT_LOCALE = "en-us";
 
 // Reserved test suffixes (RFC 2606) that tldts treats as unknown but that we
 // accept as real domains, so fixtures can use .example.

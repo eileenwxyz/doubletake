@@ -3,7 +3,8 @@ import "server-only";
 import { extract, search } from "@/lib/parallel";
 import { findOfficialDomain, planReads } from "./official";
 import { buildReport } from "./report";
-import { NEED_MORE_DETAIL_MESSAGE, type CheckResponse, type PageRead } from "./types";
+import { NEED_MORE_DETAIL_MESSAGE } from "@/lib/copy";
+import type { CheckResponse, PageRead } from "./types";
 
 // Freshness for full-page reads (seconds of cache age allowed).
 const CAREERS_MAX_AGE = 10 * 60;
@@ -14,6 +15,8 @@ export type CheckRequest = {
   website: string | null;
   senderAddress: string | null;
   senderDomain: string | null;
+  // The user's language and region, such as "en-us".
+  locale: string;
 };
 
 export async function runCheck(req: CheckRequest): Promise<CheckResponse> {
@@ -41,7 +44,7 @@ export async function runCheck(req: CheckRequest): Promise<CheckResponse> {
 
   let reads: PageRead[] = [];
   if (found.status === "found") {
-    const planned = planReads(company, found.domain, officialHits, warningHits);
+    const planned = planReads(company, found.domain, officialHits, warningHits, req.locale);
     const objective = `Which email addresses or domains ${company}'s recruiters use, and any recruiting fraud notice`;
     const batches = await Promise.all([
       extract(planned.filter((p) => p.role === "careers"), CAREERS_MAX_AGE, objective),
@@ -59,5 +62,6 @@ export async function runCheck(req: CheckRequest): Promise<CheckResponse> {
     warningHits,
     reads,
     now: new Date(),
+    locale: req.locale,
   });
 }

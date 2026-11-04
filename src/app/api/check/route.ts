@@ -1,10 +1,11 @@
-import { domainLabel, hostOf, isRealDomain } from "@/lib/check/domains";
+import { domainLabel, hostOf, isRealDomain, preferredLocale } from "@/lib/check/domains";
 import { runCheck } from "@/lib/check/run";
 import {
   GENERIC_ERROR,
+  INPUT_ERRORS,
   MONTHLY_CAP_ERROR,
   VISITOR_LIMIT_ERROR,
-} from "@/lib/messages";
+} from "@/lib/copy";
 import { clientIp, takeCheck } from "@/lib/rate-limit";
 
 const MAX_LENGTH = 200;
@@ -28,7 +29,7 @@ export async function POST(request: Request) {
   try {
     body = await request.json();
   } catch {
-    return badRequest("Send a company name.");
+    return badRequest(INPUT_ERRORS.noBody);
   }
 
   const { company, email, website } = (body ?? {}) as {
@@ -38,23 +39,23 @@ export async function POST(request: Request) {
   };
 
   if (typeof company !== "string" || company.trim() === "") {
-    return badRequest("Enter a company name.");
+    return badRequest(INPUT_ERRORS.noCompany);
   }
   let name = company.trim();
   if (name.length > MAX_LENGTH) {
-    return badRequest(`Company name must be ${MAX_LENGTH} characters or fewer.`);
+    return badRequest(INPUT_ERRORS.companyTooLong(MAX_LENGTH));
   }
   if (name.includes("@")) {
-    return badRequest("Put the recruiter's email in the email field.");
+    return badRequest(INPUT_ERRORS.emailInCompany);
   }
 
   let site: string | null = null;
   if (website !== undefined && website !== null && website !== "") {
     if (typeof website !== "string" || website.trim().length > MAX_LENGTH) {
-      return badRequest("Enter a valid website.");
+      return badRequest(INPUT_ERRORS.badWebsite);
     }
     site = websiteFrom(website.trim());
-    if (!site) return badRequest("Enter a valid website.");
+    if (!site) return badRequest(INPUT_ERRORS.badWebsite);
   }
   const typedSite = websiteFrom(name);
   if (typedSite) {
@@ -66,7 +67,7 @@ export async function POST(request: Request) {
   let senderDomain: string | null = null;
   if (email !== undefined && email !== null && email !== "") {
     if (typeof email !== "string") {
-      return badRequest("Enter a valid email address.");
+      return badRequest(INPUT_ERRORS.badEmail);
     }
     // Accepts "Name <address>" as pasted from a mail client; the display
     // name is dropped and never stored or returned.
@@ -74,12 +75,12 @@ export async function POST(request: Request) {
     const bracketed = /<([^<>]+)>$/.exec(raw);
     const address = (bracketed ? bracketed[1] : raw).trim();
     if (raw.length > MAX_LENGTH) {
-      return badRequest(`Email must be ${MAX_LENGTH} characters or fewer.`);
+      return badRequest(INPUT_ERRORS.emailTooLong(MAX_LENGTH));
     }
     if (address !== "") {
       const match = /^[^@\s]+@([^@\s]+\.[^@\s]+)$/.exec(address);
       if (!match) {
-        return badRequest("Enter a valid email address.");
+        return badRequest(INPUT_ERRORS.badEmail);
       }
       senderAddress = address.toLowerCase();
       senderDomain = match[1].toLowerCase().replace(/\.$/, "");
@@ -105,6 +106,7 @@ export async function POST(request: Request) {
       website: site,
       senderAddress,
       senderDomain,
+      locale: preferredLocale(request.headers.get("accept-language")),
     });
     return Response.json(result);
   } catch {

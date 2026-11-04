@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildReport } from "@/lib/check/report";
+import { findOfficialDomain } from "@/lib/check/official";
 import { classifySource, type SourceContext } from "@/lib/check/sources";
 import type { CheckReport } from "@/lib/check/types";
 import { acmeInput, hit } from "./fixtures";
@@ -34,7 +35,7 @@ describe("source types, first match wins", () => {
     expect(type("https://www.scamadviser.com/check-website/acme.example", "acme.example", "Trust score")).toBe("Automated rating");
     expect(type("https://www.linkedin.com/company/acme-example", "Acme", "Acme")).toBe("Directory");
     expect(type("https://www.indeed.com/cmp/Acme", "Acme", "Acme")).toBe("Directory");
-    expect(type("https://www.bbb.org/us/acme", "Acme", "Acme")).toBe("Directory");
+    expect(type("https://www.bbb.org/us/ca/san-francisco/profile/manufacturing/acme-1116-123456", "Acme | BBB", "Acme")).toBe("Directory");
     expect(type("https://tracxn.com/d/companies/acme", "Acme", "Acme")).toBe("Directory");
     expect(type("https://www.crunchbase.com/organization/acme", "Acme", "Acme")).toBe("Directory");
     // Only the company section of LinkedIn is a directory.
@@ -170,5 +171,68 @@ describe("automated rating sites and 'Other' pages", () => {
     expect(r.reasons).toContainEqual(
       expect.objectContaining({ direction: "caution", sourceType: "Other", sourceUrl: guide.url }),
     );
+  });
+});
+
+describe("facebook.com groups", () => {
+  it("treats a group post like a forum post", () => {
+    expect(
+      type("https://www.facebook.com/groups/jobscams/posts/123", "Fake Acme recruiter", "Someone posing as Acme asked me to buy a laptop."),
+    ).toBe("Report");
+    // A question in a group is not a report, and a post that doesn't name
+    // the company is general advice.
+    expect(type("https://www.facebook.com/groups/jobs/posts/124", "Is Acme legit?", "Anyone heard of them?")).toBe("Other");
+    expect(type("https://www.facebook.com/groups/jobs/posts/125", "Spotting fake recruiters", "Never pay for equipment.")).toBe("General advice");
+  });
+
+  it("other facebook.com pages are not reports", () => {
+    expect(type("https://www.facebook.com/acme", "Acme | Facebook", "Acme is hiring.")).toBe("Other");
+  });
+
+  it("a named group post makes a company-only check mixed", () => {
+    const post = hit(
+      "https://www.facebook.com/groups/jobscams/posts/123",
+      "Fake Acme recruiter",
+      "I was scammed by someone posing as Acme who asked me to buy equipment.",
+    );
+    const r = buildReport(
+      acmeInput({ warningHits: [post], reads: acmeInput().reads.filter((p) => p.role !== "fraud") }),
+    ) as CheckReport;
+    expect(r.verdict).toBe("mixed");
+    expect(r.sources.find((s) => s.url === post.url)?.type).toBe("Report");
+  });
+});
+
+describe("bbb.org", () => {
+  it("only company profile pages are directories", () => {
+    expect(type("https://www.bbb.org/us/ny/new-york/profile/staffing/acme-0121-87654", "Acme | BBB Business Profile", "Acme")).toBe("Directory");
+    expect(type("https://www.bbb.org/all/scamstudies/job-scams", "BBB scam study: job scams", "Fake recruiters pose as Acme and others.")).toBe("General advice");
+    expect(type("https://www.bbb.org/article/scams/27155-bbb-scam-alert-fake-job-offers", "BBB Scam Alert: fake job offers", "Scammers impersonate Acme.")).toBe("General advice");
+  });
+
+  it("a bbb.org article doesn't count as a listing or a warning", () => {
+    const article = hit(
+      "https://www.bbb.org/article/scams/27155-bbb-scam-alert",
+      "BBB Scam Alert: fake Acme recruiters",
+      "Scammers impersonate Acme recruiters.",
+    );
+    const r = buildReport(
+      acmeInput({ warningHits: [article], reads: acmeInput().reads.filter((p) => p.role !== "fraud") }),
+    ) as CheckReport;
+    expect(r.verdict).toBe("no_red_flags");
+    expect(r.reasons.some((x) => x.sourceUrl === article.url)).toBe(false);
+  });
+
+  it("is never taken for the company's official site", () => {
+    const hits = [1, 2, 3].map((n) =>
+      hit(`https://www.bbb.org/article/news/${n}`, `Acme news ${n}`, "Acme"),
+    );
+    expect(findOfficialDomain("Acme", null, hits)).toEqual({ status: "none" });
+  });
+});
+
+describe("jobscamscore.com", () => {
+  it("is an automated rating site", () => {
+    expect(type("https://jobscamscore.com/company/acme", "Acme job scam score", "Acme score: 82")).toBe("Automated rating");
   });
 });

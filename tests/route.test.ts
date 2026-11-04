@@ -48,6 +48,7 @@ describe("POST /api/check", () => {
       website: "careers.acme.example",
       senderAddress: "hr@acme.example",
       senderDomain: "acme.example",
+      locale: "en-us",
     });
   });
 
@@ -59,6 +60,7 @@ describe("POST /api/check", () => {
       website: null,
       senderAddress: "jane@acme.example",
       senderDomain: "acme.example",
+      locale: "en-us",
     });
     // The display name is never passed on.
     expect(JSON.stringify(runCheck.mock.calls)).not.toMatch(/doe/i);

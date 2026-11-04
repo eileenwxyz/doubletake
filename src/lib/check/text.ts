@@ -1,5 +1,11 @@
 import { FREE_EMAIL_PROVIDERS } from "./domain-lists";
-import { hostOf, isRealDomain, registrableDomain, stripCorporateSuffix } from "./domains";
+import {
+  compactName,
+  hostOf,
+  isRealDomain,
+  registrableDomain,
+  stripCorporateSuffix,
+} from "./domains";
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -58,6 +64,54 @@ export function namesCompanyLoosely(text: string, company: string): boolean {
     `(?<![\\p{L}\\p{N}])${escapeRegExp(name).replace(/ /g, "\\s+")}(?![\\p{L}\\p{N}])`,
     "iu",
   ).test(text);
+}
+
+// What the user typed, with spacing tidied and, when it is all lower case,
+// each word capitalised: "  acme   robotics" -> "Acme Robotics". Anything
+// with capitals already ("eBay", "IBM") is kept as typed.
+export function tidyName(company: string): string {
+  const flat = company.trim().replace(/\s+/g, " ");
+  if (/\p{Lu}/u.test(flat)) return flat;
+  return flat.replace(/(^|\s)(\p{Ll})/gu, (_, space: string, letter: string) =>
+    `${space}${letter.toUpperCase()}`,
+  );
+}
+
+const TITLE_PARTS = /\s+-\s+|\s*[|–—·]\s*|:\s+/;
+
+// The name as one page title writes it: a title part that is the company's
+// name spaced, punctuated or cased differently ("AT&T" for "att"), or else
+// the typed name found inside the title, in the title's capitalisation.
+function nameInTitle(title: string, company: string): string | null {
+  const target = compactName(company);
+  if (target.length < 2) return null;
+  for (const part of title.split(TITLE_PARTS)) {
+    const clean = stripCorporateSuffix(part).replace(/[\s,]+$/, "");
+    if (clean !== "" && compactName(clean) === target) return clean.replace(/\s+/g, " ");
+  }
+  const name = stripCorporateSuffix(company).replace(/\s+/g, " ");
+  if (name.length < 2) return null;
+  const match = new RegExp(
+    `(?<![\\p{L}\\p{N}])${escapeRegExp(name).replace(/ /g, "\\s+")}(?![\\p{L}\\p{N}])`,
+    "iu",
+  ).exec(title);
+  return match ? match[0].replace(/\s+/g, " ") : null;
+}
+
+// The company's proper name, taken from its official pages' titles (page
+// title or site name), most common spelling first and ties going to the
+// earlier title. Falls back to tidyName.
+export function properName(company: string, titles: ReadonlyArray<string | null>): string {
+  const votes = new Map<string, number>();
+  for (const title of titles) {
+    const found = title ? nameInTitle(title, company) : null;
+    if (found) votes.set(found, (votes.get(found) ?? 0) + 1);
+  }
+  let best: string | null = null;
+  for (const [name, count] of votes) {
+    if (best === null || count > (votes.get(best) ?? 0)) best = name;
+  }
+  return best ?? tidyName(company);
 }
 
 const WARNING_WORDS =

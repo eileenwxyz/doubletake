@@ -1,23 +1,19 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import type { CheckResponse, Verdict } from "@/lib/check/types";
-
-const VERDICT_LABELS: Record<Verdict, string> = {
-  strong_warning: "Strong warning signs",
-  mixed: "Mixed signals",
-  no_red_flags: "No red flags found",
-  not_enough: "Not enough information",
-};
-
-const DIRECTION_LABELS = {
-  reassures: "Reassures",
-  caution: "Caution",
-  neutral: "Neutral",
-} as const;
+import type { CheckResponse } from "@/lib/check/types";
+import {
+  COULDNT_FIND_LABELS,
+  DIRECTION_LABELS,
+  FORM,
+  GENERIC_ERROR,
+  HEADINGS,
+  INPUT_ERRORS,
+  SOURCE_TYPE_LABELS,
+  VERDICT_LABELS,
+} from "@/lib/copy";
 
 const MAX_LENGTH = 200;
-const GENERIC_ERROR = "Something went wrong. Try again.";
 
 export default function CheckForm() {
   const [company, setCompany] = useState("");
@@ -32,7 +28,7 @@ export default function CheckForm() {
     setResults(null);
 
     if (company.trim() === "") {
-      setError("Enter a company name.");
+      setError(INPUT_ERRORS.noCompany);
       return;
     }
 
@@ -65,7 +61,7 @@ export default function CheckForm() {
     <div className="mt-10 w-full max-w-xl text-left">
       <form onSubmit={onSubmit} className="flex flex-col gap-4">
         <label className="flex flex-col gap-1">
-          Company
+          {FORM.companyLabel}
           <input
             type="text"
             value={company}
@@ -76,7 +72,7 @@ export default function CheckForm() {
           />
         </label>
         <label className="flex flex-col gap-1">
-          Recruiter&apos;s email (optional)
+          {FORM.emailLabel}
           <input
             type="text"
             inputMode="email"
@@ -92,7 +88,7 @@ export default function CheckForm() {
           disabled={loading}
           className="self-start rounded border border-foreground/30 px-4 py-2 disabled:opacity-50"
         >
-          {loading ? "Checking…" : "Check"}
+          {loading ? FORM.submitting : FORM.submit}
         </button>
       </form>
 
@@ -117,7 +113,7 @@ export default function CheckForm() {
 
           {results.companySays && (
             <p className="text-sm">
-              The company says: &ldquo;{results.companySays.quote}&rdquo; (
+              {HEADINGS.companySays} &ldquo;{results.companySays.quote}&rdquo; (
               {results.companySays.domain})
             </p>
           )}
@@ -130,7 +126,7 @@ export default function CheckForm() {
                     {DIRECTION_LABELS[reason.direction]}: {reason.text}
                   </p>
                   <div className="text-sm text-foreground/70">
-                    {reason.sourceType} · {reason.age}
+                    {SOURCE_TYPE_LABELS[reason.sourceType]} · {reason.age}
                     {reason.sourceUrl && (
                       <>
                         {" · "}
@@ -151,11 +147,11 @@ export default function CheckForm() {
 
           {results.couldntFind.length > 0 && (
             <div>
-              <p>Couldn&apos;t find</p>
+              <p>{HEADINGS.couldntFind}</p>
               <ul className="flex flex-col gap-4">
                 {results.couldntFind.map((item, index) => (
                   <li key={`missing-${index}`} className="text-sm">
-                    {item.kind === "couldnt_check" ? "Couldn't check" : "Not published"}:{" "}
+                    {COULDNT_FIND_LABELS[item.kind]}:{" "}
                     {item.text}
                   </li>
                 ))}
@@ -165,7 +161,7 @@ export default function CheckForm() {
 
           {results.sources.length > 0 && (
             <div>
-              <p>Sources</p>
+              <p>{HEADINGS.sources}</p>
               <ul className="flex flex-col gap-4">
                 {results.sources.map((source, index) => (
                   <li key={`source-${index}`}>
@@ -173,7 +169,7 @@ export default function CheckForm() {
                       {source.url}
                     </a>
                     <div className="text-sm text-foreground/70">
-                      {source.type}
+                      {SOURCE_TYPE_LABELS[source.type]}
                       {source.publishDate && ` · ${source.publishDate}`}
                     </div>
                   </li>

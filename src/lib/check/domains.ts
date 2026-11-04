@@ -1,11 +1,15 @@
 import { parse } from "tldts";
 import {
+  DEFAULT_LOCALE,
   DIRECTORIES,
   FREE_EMAIL_PROVIDERS,
   HIRING_PLATFORMS,
+  LOCALE_SEGMENT,
   PERSONAL_PROFILE_PATHS,
+  REPORT_SITES,
   RESERVED_TEST_SUFFIXES,
   TRACKING_PARAMS,
+  type SitePages,
 } from "./domain-lists";
 
 // Private Public Suffix List entries (vercel.app, github.io, ...) count as
@@ -83,12 +87,29 @@ function pathOf(url: string): string {
   }
 }
 
-export function isDirectory(url: string): boolean {
+function onSitePages(url: string, sites: ReadonlyArray<SitePages>): boolean {
   const domain = registrableDomain(url);
   const path = pathOf(url);
-  return DIRECTORIES.some(
-    (d) => d.domain === domain && (!d.pathPrefix || path.startsWith(d.pathPrefix)),
+  return sites.some(
+    (d) =>
+      d.domain === domain &&
+      (!d.pathPrefix || path.startsWith(d.pathPrefix)) &&
+      (!d.pathPattern || d.pathPattern.test(path)),
   );
+}
+
+export function isDirectory(url: string): boolean {
+  return onSitePages(url, DIRECTORIES);
+}
+
+// Forums and review sites, including facebook.com group posts.
+export function isReportSite(url: string): boolean {
+  return onSitePages(url, REPORT_SITES);
+}
+
+// True for any page on a site listed in REPORT_SITES, whatever its path.
+export function isReportDomain(domain: string): boolean {
+  return REPORT_SITES.some((site) => site.domain === domain);
 }
 
 export function isPersonalUrl(url: string): boolean {
@@ -134,14 +155,60 @@ export function normalizeUrl(url: string): string {
   }
 }
 
-export function dedupeByUrl<T extends { url: string }>(items: T[]): T[] {
-  const seen = new Set<string>();
-  return items.filter((item) => {
-    const key = normalizeUrl(item.url);
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+// The language and region segment at the start of a URL's path ("en-gb"
+// for acme.example/en-gb/careers), or null.
+export function localeOf(url: string): string | null {
+  try {
+    const first = new URL(url.trim()).pathname.split("/").filter(Boolean)[0] ?? "";
+    return LOCALE_SEGMENT.test(first) ? first.toLowerCase() : null;
+  } catch {
+    return null;
+  }
+}
+
+// Like normalizeUrl, but language and region copies of a page share a key:
+// acme.example/en-us/careers and acme.example/de-de/careers are one page.
+export function pageKey(url: string): string {
+  const locale = localeOf(url);
+  if (!locale) return normalizeUrl(url);
+  const parsed = new URL(url.trim());
+  parsed.pathname = parsed.pathname.replace(/^\/[^/]+/, "") || "/";
+  return normalizeUrl(parsed.toString());
+}
+
+// The user's language and region from an Accept-Language header, such as
+// "en-gb" for "en-GB,en;q=0.9". Falls back to en-us.
+export function preferredLocale(acceptLanguage: string | null | undefined): string {
+  const first = (acceptLanguage ?? "").split(",")[0]?.split(";")[0]?.trim() ?? "";
+  return LOCALE_SEGMENT.test(first) ? first.toLowerCase() : DEFAULT_LOCALE;
+}
+
+// Lower is better: the user's own locale, then their language in another
+// region, then the default locale, then a page with no locale, then the rest.
+function localeRank(url: string, locale: string): number {
+  const own = localeOf(url);
+  if (own === locale) return 0;
+  if (own && own.slice(0, 2) === locale.slice(0, 2)) return 1;
+  if (own === DEFAULT_LOCALE) return 2;
+  if (own === null) return 3;
+  return 4;
+}
+
+// One item per page (see pageKey), in first-seen order. When a page has
+// language and region copies, the copy in the user's locale is kept.
+export function dedupeByUrl<T extends { url: string }>(
+  items: T[],
+  locale: string = DEFAULT_LOCALE,
+): T[] {
+  const best = new Map<string, T>();
+  for (const item of items) {
+    const key = pageKey(item.url);
+    const current = best.get(key);
+    if (!current || localeRank(item.url, locale) < localeRank(current.url, locale)) {
+      best.set(key, item);
+    }
+  }
+  return [...best.values()];
 }
 
 function levenshtein(a: string, b: string): number {

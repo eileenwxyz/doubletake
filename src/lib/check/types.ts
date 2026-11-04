@@ -74,6 +74,3 @@ export type NeedMoreDetail = {
 };
 
 export type CheckResponse = CheckReport | NeedMoreDetail;
-
-export const NEED_MORE_DETAIL_MESSAGE =
-  "Several companies use this name. Add their website or the recruiter's email.";
