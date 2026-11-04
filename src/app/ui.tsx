@@ -125,16 +125,27 @@ function Chevron() {
 
 // ---- Collapsible section ----
 
+// Pass open and onOpenChange to control it from outside.
 export function Collapsible({
   title,
   level = 2,
   children,
+  open: openProp,
+  onOpenChange,
 }: {
   title: ReactNode;
   level?: 2 | 3;
   children: ReactNode;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const [openState, setOpenState] = useState(false);
+  const open = openProp ?? openState;
+  const setOpen = (update: (v: boolean) => boolean) => {
+    const next = update(open);
+    setOpenState(next);
+    onOpenChange?.(next);
+  };
   const id = useId();
   const Heading = level === 2 ? "h2" : "h3";
   return (

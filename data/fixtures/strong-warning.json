@@ -31,6 +31,30 @@
       "age": "Date unknown"
     }
   ],
+  "allReasons": [
+    {
+      "direction": "caution",
+      "text": "The sender's domain northwind-freight.example imitates Northwind Freight's official domain northwindfreight.example.",
+      "sourceType": "Official",
+      "sourceUrl": "https://www.northwindfreight.example/recruiting-fraud",
+      "age": "Published 2026-08-14 (2 months ago)"
+    },
+    {
+      "direction": "caution",
+      "text": "A page on consumer-protection.example warns about Northwind Freight by name.",
+      "sourceType": "Authority",
+      "sourceUrl": "https://consumer-protection.example/alerts/northwind-freight-job-offers",
+      "age": "Published 2026-10-21 (13 days ago)"
+    },
+    {
+      "direction": "reassures",
+      "text": "northwindfreight.example is Northwind Freight's official website.",
+      "sourceType": "Official",
+      "sourceUrl": "https://www.northwindfreight.example/",
+      "age": "Date unknown"
+    }
+  ],
+  "moreReasons": {},
   "couldntFind": [
     {
       "kind": "couldnt_check",

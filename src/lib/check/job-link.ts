@@ -619,17 +619,27 @@ export function checkCareers(
   title: string | null,
   pages: PageRead[],
   posting: PageRead | null,
-): { result: CareersResult; url: string | null } {
+): { result: CareersResult; url: string | null; urls?: string[] } {
   if (!title) return { result: "couldnt_check", url: null };
   if (posting?.ok && posting.text && saysClosed(posting.text)) {
     return { result: "closed", url: posting.url };
   }
   const readable = pages.filter((p) => p.ok);
-  for (const page of readable) {
+  // Whether the job is listed open on a page: true, false (closed there) or
+  // null (not on it).
+  const openOn = (page: PageRead): boolean | null => {
     const found = titleIndex(page.text, title);
-    if (found.at < 0) continue;
+    if (found.at < 0) return null;
     const near = found.text.slice(Math.max(0, found.at - 150), found.at + found.length + 150);
-    return { result: saysClosed(near) ? "closed" : "listed", url: page.url };
+    return !saysClosed(near);
+  };
+  for (const page of readable) {
+    const open = openOn(page);
+    if (open === null) continue;
+    if (!open) return { result: "closed", url: page.url };
+    // Every page that lists it open, so one reason can link them all.
+    const urls = readable.filter((p) => openOn(p) === true).map((p) => p.url);
+    return { result: "listed", url: page.url, urls };
   }
   // A page still showing a loading spinner hasn't shown its listings, so it
   // can't show the job is missing.

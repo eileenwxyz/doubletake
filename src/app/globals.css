@@ -602,16 +602,41 @@ a {
   margin: 0;
 }
 
-.reason-direction {
-  display: inline-flex;
+/* One small heading per direction group; each label appears once. */
+.reason-group + .reason-group {
+  margin-top: var(--space-5);
+}
+
+.reason-group-heading {
+  display: flex;
   align-items: center;
   gap: var(--space-1);
+  margin: 0 0 var(--space-2);
   font-size: var(--text-sm);
   font-weight: var(--weight-semibold);
 }
 
+.more-reasons {
+  margin-top: var(--space-3);
+  font-size: var(--text-sm);
+}
+
+.all-sources-heading {
+  margin: var(--space-5) 0 var(--space-3);
+  font-size: var(--text-base);
+  font-weight: var(--weight-semibold);
+}
+
+.collapsible-body > .all-sources-heading:first-child {
+  margin-top: 0;
+}
+
+.source-group-heading:focus:not(:focus-visible) {
+  outline: none;
+}
+
 .reason-text {
-  margin-top: var(--space-1) !important;
+  margin-top: 0 !important;
 }
 
 .reason-meta {

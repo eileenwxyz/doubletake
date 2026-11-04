@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useId, useRef } from "react";
-import type { CheckReport } from "@/lib/check/types";
+import { useEffect, useId, useRef, useState } from "react";
+import { flushSync } from "react-dom";
+import type { CheckReport, Direction, Reason } from "@/lib/check/types";
 import {
   COULDNT_FIND_LABELS,
   DIRECTION_LABELS,
@@ -10,7 +11,13 @@ import {
   SOURCE_TYPE_LABELS,
   VERDICT_LABELS,
 } from "@/lib/copy";
-import { citedSources, formatCheckedAt, groupSources, shortUrl } from "@/lib/present";
+import {
+  citedSources,
+  formatCheckedAt,
+  groupReasons,
+  groupSources,
+  shortUrl,
+} from "@/lib/present";
 import {
   ArrowIcon,
   Collapsible,
@@ -43,6 +50,19 @@ export default function Result({
 
   const cited = citedSources(report.reasons);
   const groups = groupSources(report.sources);
+  const topGroups = groupReasons(report.reasons, report.verdict);
+  const allGroups = report.allReasons ? groupReasons(report.allReasons, report.verdict) : [];
+  const allGroupId = (direction: Direction) => `${ids}-all-${direction}`;
+
+  // "+N more reasons" opens "See all sources" and scrolls to that group.
+  const [allOpen, setAllOpen] = useState(false);
+  const showAllReasons = (direction: Direction) => {
+    // Render the opened section first, so the group exists to scroll to.
+    flushSync(() => setAllOpen(true));
+    const target = document.getElementById(allGroupId(direction));
+    target?.scrollIntoView({ block: "start" });
+    target?.focus({ preventScroll: true });
+  };
 
   return (
     <article className="result" aria-label={report.companyName}>
@@ -133,32 +153,31 @@ export default function Result({
           {report.lookalike && (
             <DomainCompare sender={report.lookalike.sender} imitates={report.lookalike.imitates} />
           )}
-          <ul className="reasons">
-            {report.reasons.map((reason, index) => (
-              <li key={index} className={`reason reason--${reason.direction}`}>
-                <p className="reason-direction">
-                  <DirectionIcon direction={reason.direction} />
-                  <span>{DIRECTION_LABELS[reason.direction]}</span>
-                </p>
-                <p className="reason-text">
-                  <WithDomains text={reason.text} />
-                </p>
-                <p className="reason-meta">
-                  <span>{SOURCE_TYPE_LABELS[reason.sourceType]}</span>
-                  <span aria-hidden="true"> · </span>
-                  <span>{reason.age}</span>
-                  <span aria-hidden="true"> · </span>
-                  {reason.sourceUrl ? (
-                    <a href={reason.sourceUrl} rel="noopener noreferrer" className="source-link">
-                      <Mono>{shortUrl(reason.sourceUrl)}</Mono>
-                    </a>
-                  ) : (
-                    <span>{RESULT.noSourceLink}</span>
-                  )}
-                </p>
-              </li>
-            ))}
-          </ul>
+          {topGroups.map((group) => {
+            const more = allGroups.length ? report.moreReasons?.[group.direction] ?? 0 : 0;
+            return (
+              <div key={group.direction} className="reason-group">
+                <h3 className="reason-group-heading">
+                  <DirectionIcon direction={group.direction} />
+                  <span>{DIRECTION_LABELS[group.direction]}</span>
+                </h3>
+                <ul className="reasons">
+                  {group.reasons.map((reason, index) => (
+                    <ReasonItem key={index} reason={reason} />
+                  ))}
+                </ul>
+                {more > 0 && (
+                  <button
+                    type="button"
+                    className="text-button more-reasons"
+                    onClick={() => showAllReasons(group.direction)}
+                  >
+                    {RESULT.moreReasons(more)}
+                  </button>
+                )}
+              </div>
+            );
+          })}
         </section>
       )}
 
@@ -200,27 +219,50 @@ export default function Result({
       </section>
 
       {/* 8. See all sources */}
-      {groups.length > 0 && (
-        <Collapsible title={RESULT.allSources}>
-          {groups.map((group) => (
-            <div key={group.type} className="source-group">
-              <h3 className="source-group-heading">
-                {RESULT.sourceGroup(SOURCE_TYPE_LABELS[group.type], group.sources.length)}
-              </h3>
-              <ul className="source-list">
-                {group.sources.map((source) => (
-                  <li key={source.url}>
-                    <a href={source.url} rel="noopener noreferrer" className="source-link">
-                      <Mono>{shortUrl(source.url)}</Mono>
-                    </a>
-                    {source.publishDate && (
-                      <span className="source-date"> · {source.publishDate.slice(0, 10)}</span>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
+      {(groups.length > 0 || allGroups.length > 0) && (
+        <Collapsible title={RESULT.allSources} open={allOpen} onOpenChange={setAllOpen}>
+          {allGroups.length > 0 && (
+            <>
+              <h3 className="all-sources-heading">{RESULT.allReasonsHeading}</h3>
+              {allGroups.map((group) => (
+                <div key={group.direction} className="source-group">
+                  <h4 id={allGroupId(group.direction)} tabIndex={-1} className="source-group-heading">
+                    {RESULT.sourceGroup(DIRECTION_LABELS[group.direction], group.reasons.length)}
+                  </h4>
+                  <ul className="reasons">
+                    {group.reasons.map((reason, index) => (
+                      <ReasonItem key={index} reason={reason} />
+                    ))}
+                  </ul>
+                </div>
+              ))}
+              {groups.length > 0 && (
+                <h3 className="all-sources-heading">{RESULT.allSourcesHeading}</h3>
+              )}
+            </>
+          )}
+          {groups.map((group) => {
+            const Heading = allGroups.length > 0 ? "h4" : "h3";
+            return (
+              <div key={group.type} className="source-group">
+                <Heading className="source-group-heading">
+                  {RESULT.sourceGroup(SOURCE_TYPE_LABELS[group.type], group.sources.length)}
+                </Heading>
+                <ul className="source-list">
+                  {group.sources.map((source) => (
+                    <li key={source.url}>
+                      <a href={source.url} rel="noopener noreferrer" className="source-link">
+                        <Mono>{shortUrl(source.url)}</Mono>
+                      </a>
+                      {source.publishDate && (
+                        <span className="source-date"> · {source.publishDate.slice(0, 10)}</span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            );
+          })}
         </Collapsible>
       )}
 
@@ -244,5 +286,36 @@ export default function Result({
         )}
       </Collapsible>
     </article>
+  );
+}
+
+// One reason: its sentence, then the type, age and link of each source it
+// cites (a merged reason cites several).
+function ReasonItem({ reason }: { reason: Reason }) {
+  const sources = [
+    { url: reason.sourceUrl, sourceType: reason.sourceType, age: reason.age },
+    ...(reason.alsoFrom ?? []),
+  ];
+  return (
+    <li className={`reason reason--${reason.direction}`}>
+      <p className="reason-text">
+        <WithDomains text={reason.text} />
+      </p>
+      {sources.map((source, index) => (
+        <p key={index} className="reason-meta">
+          <span>{SOURCE_TYPE_LABELS[source.sourceType]}</span>
+          <span aria-hidden="true"> · </span>
+          <span>{source.age}</span>
+          <span aria-hidden="true"> · </span>
+          {source.url ? (
+            <a href={source.url} rel="noopener noreferrer" className="source-link">
+              <Mono>{shortUrl(source.url)}</Mono>
+            </a>
+          ) : (
+            <span>{RESULT.noSourceLink}</span>
+          )}
+        </p>
+      ))}
+    </li>
   );
 }

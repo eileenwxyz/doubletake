@@ -99,6 +99,12 @@ export const AGES = {
   years: (day: string, n: number) => `Published ${day} (${n} years ago)`,
 } as const;
 
+// "a", "a and b", "a, b and c".
+export function listJoin(items: readonly string[]): string {
+  if (items.length <= 1) return items[0] ?? "";
+  return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+}
+
 // ---- Reason templates ----
 // d: the sender's domain. o: the official domain. company: the company's
 // display name.
@@ -137,6 +143,15 @@ export const REASONS = {
     `A page on ${host} reports a problem involving ${company} by name.`,
   senderWarning: (host: string, d: string) =>
     `A page on ${host} names ${d} in a scam warning.`,
+  // The same fact from more than one source, shown as one reason.
+  authorityWarningMany: (hosts: string[], company: string) =>
+    `Pages on ${listJoin(hosts)} warn about ${company} by name.`,
+  reportWarningMany: (hosts: string[], company: string) =>
+    `Posts on ${listJoin(hosts)} report a problem involving ${company} by name.`,
+  pageWarningMany: (hosts: string[], company: string) =>
+    `Pages on ${listJoin(hosts)} report a problem involving ${company} by name.`,
+  senderWarningMany: (hosts: string[], d: string) =>
+    `Pages on ${listJoin(hosts)} name ${d} in a scam warning.`,
   publishesList: (company: string, domains: string) =>
     `${company} publishes the email domains its recruiters use: ${domains}.`,
   fraudNotice: (company: string) =>
@@ -144,11 +159,17 @@ export const REASONS = {
   officialSite: (o: string, company: string) => `${o} is ${company}'s official website.`,
   directoryListing: (company: string, host: string) =>
     `${company} has a company listing on ${host}.`,
+  directoryListingMany: (company: string, hosts: string[]) =>
+    `${company} has company listings on ${listJoin(hosts)}.`,
   automatedRating: (host: string) =>
     `${host} has an automated rating page; automated scores are not a verdict.`,
+  automatedRatingMany: (hosts: string[]) =>
+    `${listJoin(hosts)} have automated rating pages; automated scores are not a verdict.`,
   // ---- Job checks ----
   jobListed: (title: string, company: string, host: string) =>
     `“${title}” is listed on ${host}, ${company}'s own job listings.`,
+  jobListedMany: (title: string, company: string, count: number) =>
+    `“${title}” is listed on ${count} of ${company}'s own pages.`,
   jobNotListed: (title: string, company: string, host: string) =>
     `“${title}” isn't listed on ${company}'s own job listings on ${host}. It may be filled, stale or copied.`,
   jobClosed: (host: string) => `This role has closed: ${host} says the job is no longer available.`,
@@ -189,6 +210,9 @@ export const RESULT = {
   },
   companySaysFrom: (domain: string) => `From ${domain} · Official`,
   topReasons: "Top reasons",
+  // Ends a group of top reasons when equally strong ones were left out;
+  // opens "See all sources" at that group.
+  moreReasons: (n: number) => `+${n} more reason${n === 1 ? "" : "s"}`,
   sourcesCount: (shown: number, total: number) =>
     `${shown} of ${total} source${total === 1 ? "" : "s"}`,
   noSourceLink: "No source page",
@@ -208,6 +232,8 @@ export const RESULT = {
     "Don't send ID or bank details until you've confirmed the offer with the company.",
   ],
   allSources: "See all sources",
+  allReasonsHeading: "Every reason",
+  allSourcesHeading: "Every source",
   sourceGroup: (label: string, count: number) => `${label} (${count})`,
   howWeChecked: "How we checked",
   searchesIntro: "We ran these searches, then read the most relevant pages in full:",
