@@ -16,23 +16,38 @@ const DEFAULT_DAILY_LIMIT = 10;
 const DEFAULT_MONTHLY_CAP = 1000;
 
 export type LimitResult =
-  | { allowed: true }
+  | {
+      allowed: true;
+      // Checks the visitor has left today after this one; null when limits
+      // are off.
+      remaining: number | null;
+      // Gives the check back, for a check that failed and returned nothing.
+      refund: () => Promise<void>;
+    }
   | { allowed: false; reason: "visitor" | "monthly" };
 
 // Thrown when limits cannot be checked (storage missing or unreachable).
 export class RateLimitError extends Error {}
 
-// Returns 0 when allowed, 1 when the visitor is over the daily limit,
-// 2 when the monthly cap for everyone is reached.
+// Returns {0, checks left today} when allowed, {1, 0} when the visitor is
+// over the daily limit, {2, 0} when the monthly cap for everyone is reached.
 const SCRIPT = `
 local visitor = tonumber(redis.call("GET", KEYS[1]) or "0")
 local total = tonumber(redis.call("GET", KEYS[2]) or "0")
-if total >= tonumber(ARGV[2]) then return 2 end
-if visitor >= tonumber(ARGV[1]) then return 1 end
+if total >= tonumber(ARGV[2]) then return {2, 0} end
+if visitor >= tonumber(ARGV[1]) then return {1, 0} end
 redis.call("INCR", KEYS[1])
 redis.call("EXPIRE", KEYS[1], ARGV[3])
 redis.call("INCR", KEYS[2])
 redis.call("EXPIRE", KEYS[2], ARGV[4])
+return {0, tonumber(ARGV[1]) - visitor - 1}
+`;
+
+// Takes back one check from both counters, never going below zero.
+const REFUND_SCRIPT = `
+for _, key in ipairs(KEYS) do
+  if tonumber(redis.call("GET", key) or "0") > 0 then redis.call("DECR", key) end
+end
 return 0
 `;
 
@@ -85,7 +100,7 @@ export async function takeCheck(ip: string): Promise<LimitResult> {
     if (process.env.NODE_ENV !== "production") {
       // Local development without storage: skip limits rather than block.
       console.warn("Rate limits are off: storage or IP_HASH_SECRET is not set.");
-      return { allowed: true };
+      return { allowed: true, remaining: null, refund: async () => {} };
     }
     // Fail closed in production so Parallel is never called without limits.
     throw new RateLimitError("Rate limiting is not configured.");
@@ -105,18 +120,28 @@ export async function takeCheck(ip: string): Promise<LimitResult> {
   const dayTtl = Math.ceil((nextDay - now.getTime()) / 1000) + 3600;
   const monthTtl = Math.ceil((nextMonth - now.getTime()) / 1000) + 86400;
 
-  let code: unknown;
+  const keys = [`checks:visitor:${day}:${hashIp(ip, secret)}`, `checks:total:${month}`];
+  let reply: unknown;
   try {
-    code = await store.eval(
-      SCRIPT,
-      [`checks:visitor:${day}:${hashIp(ip, secret)}`, `checks:total:${month}`],
-      [dailyLimit(), monthlyCap(), dayTtl, monthTtl],
-    );
+    reply = await store.eval(SCRIPT, keys, [dailyLimit(), monthlyCap(), dayTtl, monthTtl]);
   } catch {
     throw new RateLimitError("Rate limit storage could not be reached.");
   }
 
-  if (code === 0) return { allowed: true };
+  const [code, left] = Array.isArray(reply) ? reply : [reply, null];
+  if (code === 0) {
+    return {
+      allowed: true,
+      remaining: typeof left === "number" ? Math.max(0, left) : null,
+      refund: async () => {
+        try {
+          await store.eval(REFUND_SCRIPT, keys, []);
+        } catch {
+          // A lost refund only costs the visitor one check.
+        }
+      },
+    };
+  }
   if (code === 1) return { allowed: false, reason: "visitor" };
   if (code === 2) return { allowed: false, reason: "monthly" };
   throw new RateLimitError("Unexpected rate limit response.");

@@ -147,3 +147,97 @@ export const COULDNT_FIND = {
   noFraudNotice: (company: string) =>
     `${company} doesn't publish a recruiting fraud notice on the pages checked.`,
 } as const;
+
+// ---- Result page ----
+export const RESULT = {
+  example: "Example",
+  checkedAt: (when: string) => `Checked ${when}`,
+  notThisOne: "Not this one?",
+  disclaimer: "About the evidence we found, not a guarantee.",
+  nextStepLabel: "Your next step",
+  nextStep: {
+    fraud: (company: string) => `Read ${company}'s recruiting fraud page`,
+    careers: (company: string) => `Find the job on ${company}'s careers page`,
+    site: (company: string) => `Go to ${company}'s official website`,
+  },
+  companySaysFrom: (domain: string) => `From ${domain} · Official`,
+  topReasons: "Top reasons",
+  sourcesCount: (shown: number, total: number) =>
+    `${shown} of ${total} source${total === 1 ? "" : "s"}`,
+  noSourceLink: "No source page",
+  lookalikeSender: "Sender",
+  lookalikeCompany: "Company",
+  lookalikeHeading: "How the domains differ",
+  couldntFind: "What we couldn't find",
+  whatNext: "What to do next",
+  replyToTip: (domain: string) =>
+    `Before you reply, check the reply-to address. If it isn't at ${domain}, your answer would go to someone else.`,
+  checkYourself: "Things to check yourself",
+  checkYourselfItems: [
+    "Find the same job on the company's own careers page.",
+    "Contact the company using details from its official website, not from the message.",
+    "Never pay for equipment, training or a background check to get a job.",
+    "Be wary of interviews held only by text message or chat app.",
+    "Don't send ID or bank details until you've confirmed the offer with the company.",
+  ],
+  allSources: "See all sources",
+  sourceGroup: (label: string, count: number) => `${label} (${count})`,
+  howWeChecked: "How we checked",
+  searchesIntro: "We ran these searches, then read the most relevant pages in full:",
+  noSearches: "No searches are recorded for this result.",
+  checkAnother: "Check another company",
+} as const;
+
+// ---- Look-alike domains ----
+// Sentences a screen reader can read, describing how a sender's domain
+// differs from the company's. "char" is a character name from
+// DIFF.charName, such as "a hyphen" or "the letter l".
+export const DIFF = {
+  charName: (c: string) => {
+    if (c === ".") return "a dot";
+    if (c === "-") return "a hyphen";
+    if (c === "_") return "an underscore";
+    if (/[0-9]/.test(c)) return `the number ${c}`;
+    if (/[a-z]/i.test(c)) return `the letter ${c}`;
+    return `the character “${c}”`;
+  },
+  // Without an article: "hyphen", "letter l".
+  charNoun: (c: string) => {
+    if (c === ".") return "dot";
+    if (c === "-") return "hyphen";
+    if (c === "_") return "underscore";
+    if (/[0-9]/.test(c)) return `number ${c}`;
+    if (/[a-z]/i.test(c)) return `letter ${c}`;
+    return `character “${c}”`;
+  },
+  replacesChar: (added: string, removed: string) => `${added} replaces ${removed}.`,
+  replacesText: (added: string, removed: string) => `“${added}” replaces “${removed}”.`,
+  extraChar: (noun: string) => `An extra ${noun} is added.`,
+  extraText: (added: string) => `The extra characters “${added}” are added.`,
+  extraAround: (before: string, after: string) =>
+    `“${before}” is added before the company's domain and “${after}” after it.`,
+  missingChar: (name: string) => `${name} is missing.`,
+  missingText: (removed: string) => `The characters “${removed}” are missing.`,
+  same: "The domains look the same.",
+} as const;
+
+// ---- Screen states ----
+export const STATUS = {
+  checking: "Usually 15 to 30 seconds",
+  slow: "Still checking. Some sites are slow to read.",
+  retry: "Try again",
+  notCounted: "This didn't use one of your checks.",
+  checksLeft: (n: number) => `${n} check${n === 1 ? "" : "s"} left today`,
+} as const;
+
+// ---- Examples ----
+export const EXAMPLES = {
+  heading: "Example results",
+  intro: "See what a result looks like. These companies are made up.",
+  label: "Example",
+  open: (company: string, verdict: string) => `${company}: ${verdict}`,
+} as const;
+
+// ---- Footer ----
+export const FOOTER =
+  "Doubletake is an independent project built on Parallel's API. It is not affiliated with Parallel or with any company it checks, and its results are not legal, financial or career advice.";

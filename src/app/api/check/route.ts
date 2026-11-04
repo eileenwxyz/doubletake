@@ -6,9 +6,25 @@ import {
   MONTHLY_CAP_ERROR,
   VISITOR_LIMIT_ERROR,
 } from "@/lib/copy";
-import { clientIp, takeCheck } from "@/lib/rate-limit";
+import { clientIp, takeCheck, type LimitResult } from "@/lib/rate-limit";
+import type { CheckApiError, CheckApiResponse } from "@/lib/check/types";
 
 const MAX_LENGTH = 200;
+
+// The page gives up after 60 seconds; the server stops a little sooner so
+// the visitor gets the check back.
+export const maxDuration = 60;
+const CHECK_DEADLINE_MS = 55_000;
+
+class DeadlineError extends Error {}
+
+function withDeadline<T>(work: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new DeadlineError()), ms);
+  });
+  return Promise.race([work, deadline]).finally(() => clearTimeout(timer));
+}
 
 function badRequest(error: string) {
   return Response.json({ error }, { status: 400 });
@@ -88,29 +104,40 @@ export async function POST(request: Request) {
   }
 
   // Limits run after validation, so a typo doesn't cost a check.
+  let limit: LimitResult;
   try {
-    const limit = await takeCheck(clientIp(request));
-    if (!limit.allowed) {
-      const error =
-        limit.reason === "monthly" ? MONTHLY_CAP_ERROR : VISITOR_LIMIT_ERROR;
-      return Response.json({ error }, { status: 429 });
-    }
+    limit = await takeCheck(clientIp(request));
   } catch {
     // Fail closed: never call Parallel when limits can't be checked.
-    return Response.json({ error: GENERIC_ERROR }, { status: 503 });
+    return Response.json({ error: GENERIC_ERROR } satisfies CheckApiError, { status: 503 });
+  }
+  if (!limit.allowed) {
+    const body: CheckApiError =
+      limit.reason === "monthly"
+        ? { error: MONTHLY_CAP_ERROR, limit: "monthly" }
+        : { error: VISITOR_LIMIT_ERROR, limit: "daily" };
+    return Response.json(body, { status: 429 });
   }
 
   try {
-    const result = await runCheck({
-      company: name,
-      website: site,
-      senderAddress,
-      senderDomain,
-      locale: preferredLocale(request.headers.get("accept-language")),
-    });
-    return Response.json(result);
-  } catch {
+    const result = await withDeadline(
+      runCheck({
+        company: name,
+        website: site,
+        senderAddress,
+        senderDomain,
+        locale: preferredLocale(request.headers.get("accept-language")),
+      }),
+      CHECK_DEADLINE_MS,
+    );
+    const body: CheckApiResponse = { ...result, checksRemaining: limit.remaining ?? null };
+    return Response.json(body);
+  } catch (error) {
+    // A check that returns nothing doesn't count against the limit.
+    await limit.refund?.();
     // Deliberately no details: never surface upstream errors or secrets.
-    return Response.json({ error: GENERIC_ERROR }, { status: 502 });
+    return Response.json({ error: GENERIC_ERROR } satisfies CheckApiError, {
+      status: error instanceof DeadlineError ? 504 : 502,
+    });
   }
 }

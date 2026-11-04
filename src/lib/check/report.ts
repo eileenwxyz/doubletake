@@ -15,7 +15,7 @@ import {
   pageKey,
   registrableDomain,
 } from "./domains";
-import { findOfficialDomain } from "./official";
+import { findOfficialDomain, officialPageRole } from "./official";
 import { evaluateSender, type SenderResult } from "./sender";
 import { classifySource, type SourceContext } from "./sources";
 import {
@@ -35,6 +35,7 @@ import {
   type CheckResponse,
   type CouldntFind,
   type Direction,
+  type NextStepKind,
   type PageRead,
   type Reason,
   type SearchHit,
@@ -56,6 +57,8 @@ export type CheckInput = {
   // The user's language and region ("en-us"); picks which copy of a
   // localised page to keep.
   locale?: string;
+  // The search queries that ran, shown under "How we checked".
+  searches?: string[];
 };
 
 const MAX_REASONS = 3;
@@ -423,6 +426,32 @@ export function buildReport(input: CheckInput): CheckResponse {
     }
   }
 
+  // ---- Primary next step ----
+  let nextStep: { url: string; kind: NextStepKind } | null = null;
+  if (officialDomain) {
+    const ownHits = dedupeByUrl(input.officialHits, locale).filter(
+      (h) => registrableDomain(h.url) === officialDomain,
+    );
+    const pageFor = (role: "fraud" | "careers") =>
+      readOk.find((r) => r.role === role)?.url ??
+      officialReads.find((r) => r.role === role)?.url ??
+      ownHits.find((h) => officialPageRole(h) === role)?.url ??
+      null;
+    const fraudUrl = fraudNotice?.url ?? pageFor("fraud");
+    const careersUrl = pageFor("careers");
+    if (fraudUrl) nextStep = { url: fraudUrl, kind: "fraud" };
+    else if (careersUrl) nextStep = { url: careersUrl, kind: "careers" };
+    else {
+      const home = readOk.find((r) => r.role === "home")?.url ?? `https://${officialDomain}/`;
+      nextStep = { url: home, kind: "site" };
+    }
+  }
+
+  const lookalike =
+    sender?.case === "lookalike" && input.senderDomain
+      ? { sender: input.senderDomain, imitates: sender.imitates ?? officialDomain ?? "" }
+      : null;
+
   const sources: Source[] = evidence.map((e) => ({
     url: e.url,
     type: e.type,
@@ -431,6 +460,8 @@ export function buildReport(input: CheckInput): CheckResponse {
 
   return {
     status: "ok",
+    companyName: name,
+    checkedAt: now.toISOString(),
     verdict,
     subtitle,
     companySays:
@@ -439,6 +470,10 @@ export function buildReport(input: CheckInput): CheckResponse {
     couldntFind,
     sources,
     officialDomain,
+    nextStep,
+    senderDomain: input.senderDomain,
+    lookalike: lookalike && lookalike.imitates ? lookalike : null,
+    searches: input.searches ?? [],
   };
 }
 

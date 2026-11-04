@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const takeCheck = vi.fn();
 const runCheck = vi.fn();
+const refund = vi.fn();
 
 vi.mock("@/lib/rate-limit", () => ({
   clientIp: () => "203.0.113.1",
@@ -26,7 +27,8 @@ function post(body: unknown) {
 beforeEach(() => {
   takeCheck.mockReset();
   runCheck.mockReset();
-  takeCheck.mockResolvedValue({ allowed: true });
+  refund.mockReset();
+  takeCheck.mockResolvedValue({ allowed: true, remaining: null, refund });
   runCheck.mockResolvedValue({ status: "need_more_detail", message: "m" });
 });
 
@@ -37,6 +39,7 @@ describe("POST /api/check", () => {
     expect(response.status).toBe(429);
     expect(await response.json()).toEqual({
       error: "Doubletake has reached its limit for this month. Try again on the 1st.",
+      limit: "monthly",
     });
     expect(runCheck).not.toHaveBeenCalled();
   });
@@ -73,7 +76,54 @@ describe("POST /api/check", () => {
   it("returns the structured result", async () => {
     const response = await post({ company: "Acme" });
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ status: "need_more_detail", message: "m" });
+    expect(await response.json()).toEqual({
+      status: "need_more_detail",
+      message: "m",
+      checksRemaining: null,
+    });
+  });
+
+  it("shows the daily-limit message", async () => {
+    takeCheck.mockResolvedValue({ allowed: false, reason: "visitor" });
+    const response = await post({ company: "Acme" });
+    expect(response.status).toBe(429);
+    expect(await response.json()).toEqual({
+      error: "You've used today's checks. Try again tomorrow.",
+      limit: "daily",
+    });
+  });
+
+  it("passes on how many checks are left today", async () => {
+    takeCheck.mockResolvedValue({ allowed: true, remaining: 2, refund });
+    const response = await post({ company: "Acme" });
+    expect((await response.json()).checksRemaining).toBe(2);
+  });
+
+  it("gives the check back when the check fails", async () => {
+    runCheck.mockRejectedValue(new Error("upstream down"));
+    const response = await post({ company: "Acme" });
+    expect(response.status).toBe(502);
+    expect(await response.json()).toEqual({ error: "Something went wrong. Try again." });
+    expect(refund).toHaveBeenCalledTimes(1);
+  });
+
+  it("gives up and gives the check back after 55 seconds", async () => {
+    vi.useFakeTimers();
+    try {
+      runCheck.mockReturnValue(new Promise(() => {}));
+      const pending = post({ company: "Acme" });
+      await vi.advanceTimersByTimeAsync(55_000);
+      const response = await pending;
+      expect(response.status).toBe(504);
+      expect(refund).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("doesn't count a check that fails validation", async () => {
+    await post({ company: "" });
+    expect(takeCheck).not.toHaveBeenCalled();
   });
 
   it("rejects an email in the company field", async () => {
