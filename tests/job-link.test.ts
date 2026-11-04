@@ -681,3 +681,60 @@ describe("an employer whose own pages leave off the suffix", () => {
     expect(r.verdict).not.toBe("not_enough");
   });
 });
+
+// ---- Employer on a plain "at <Name> in <place>" line ----
+
+describe("a state job board that names the employer under the title heading", () => {
+  const LINK = "https://www.azjobconnection.gov/jobs/7630570";
+  const FILLER_NW =
+    "Northwind Group places designers and engineers with technology companies across the Southwest. " +
+    "Every role we recruit for is listed on our own careers site, and we never charge candidates.";
+  const text = `# Product Designer
+
+at Northwind Group in Phoenix, Arizona, United States
+
+Our client seeks a product designer to shape its customer apps. ${FILLER_NW}`;
+
+  it("reads the employer from the line under the heading", () => {
+    const link = parseJobLink(LINK);
+    expect(link).toEqual({ kind: "aggregator", site: "azjobconnection.gov", domain: "azjobconnection.gov", url: LINK });
+    if (link?.kind !== "aggregator") throw new Error("expected an aggregator link");
+    const parsed = (variant: string) =>
+      parseAggregatorPosting({ ok: true, title: "Product Designer - AZ Job Connection", text: variant }, link)?.employer ?? null;
+
+    expect(parsed(text)).toBe("Northwind Group");
+    expect(parsed("# Product Designer\n\nat Northwind Group, Phoenix")).toBe("Northwind Group");
+    expect(parsed("# Product Designer\n\nat Northwind Group - Full time")).toBe("Northwind Group");
+    expect(parsed("# Product Designer\n\nat Northwind Group")).toBe("Northwind Group");
+    // Too far below the heading, or the site's own name: not the employer.
+    expect(parsed("# Product Designer\n\nPhoenix\n\nFull time\n\nRemote\n\nat Northwind Group")).toBeNull();
+    expect(parsed("# Product Designer\n\nat AZ Job Connection in Phoenix")).toBeNull();
+    expect(parsed("# Product Designer\n\nat azjobconnection.gov in Phoenix")).toBeNull();
+  });
+
+  it("checks Northwind Group, says where it was posted, and shows the unnamed-client item", async () => {
+    pages = {
+      [LINK]: { title: "Product Designer - AZ Job Connection", text },
+      "https://www.northwind.example/": { text: `# Northwind Group\n\n${FILLER_NW}` },
+    };
+    searchResults = (call) =>
+      call.queries.includes("Northwind Group official website careers")
+        ? [
+            hit("https://www.northwind.example/", "Northwind Group | Technology recruiting", "Northwind Group places designers."),
+            hit("https://www.northwind.example/about", "About Northwind Group", "Northwind Group was founded in Phoenix."),
+          ]
+        : [];
+
+    const r = (await runCheck(req(null, parseJobLink(LINK)))) as CheckReport;
+    expect(r.status).toBe("ok");
+    expect(r.companyName).toBe("Northwind Group");
+    expect(r.officialDomain).toBe("northwind.example");
+    expect(r.job).toMatchObject({ site: "azjobconnection.gov", title: "Product Designer", unnamedClient: true });
+    expect(RESULT.postedOn(r.job!.site!)).toBe("Posted on azjobconnection.gov");
+    expect(r.couldntFind).toContainEqual({
+      kind: "couldnt_check",
+      text: "The client company isn't named. Northwind Group posted this job for a client it doesn't name, so only Northwind Group was checked.",
+      url: null,
+    });
+  });
+});

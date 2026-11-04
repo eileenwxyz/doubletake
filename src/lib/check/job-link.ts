@@ -342,6 +342,26 @@ const TITLE_LABEL =
   /^[ \t]*(?:[-*][ \t]+)?(?:\*\*|__)?(?:job title|title|position|position title)(?:\*\*|__)?[ \t]*[:：][ \t]*(?:\*\*|__)?[ \t]*(.+)$/im;
 const CAREERS_PATH = /(careers?|jobs?|join|work-with-us|opportunities|hiring)/i;
 
+// "at Northwind Group in Phoenix, Arizona" -> "Northwind Group". The name
+// stops before " in <place>", a comma, " - " or the end of the line.
+const AT_EMPLOYER = /^at\s+(.+?)(?=\s+in\s+|\s*,|\s+[-–—]\s+|\s*$)/i;
+const LINES_AFTER_HEADING = 3;
+
+function employerUnderHeading(lines: string[]): string | null {
+  const heading = lines.findIndex((l) => /^\s{0,3}#{1,3}\s+\S/.test(l));
+  if (heading < 0) return null;
+  const next = lines
+    .slice(heading + 1)
+    .map((l) => cleanText(l))
+    .filter((l) => l !== "")
+    .slice(0, LINES_AFTER_HEADING);
+  for (const line of next) {
+    const match = AT_EMPLOYER.exec(line);
+    if (match) return match[1];
+  }
+  return null;
+}
+
 export type AggregatorPosting = {
   // The employer the posting names, never the site it is on.
   employer: string;
@@ -382,6 +402,9 @@ export function parseAggregatorPosting(
     employer = notSite(plausibleName(value));
     if (employer) break;
   }
+  // "at <Employer> in <place>" on a plain line just under the job title
+  // heading, as some state job boards write it.
+  employer ??= notSite(plausibleName(employerUnderHeading(lines)));
   // Indeed's company link, or "... at <Employer>" in the page title.
   employer ??= notSite(plausibleName(/\[([^\]]+)\]\(https?:\/\/[^)\s]*\/cmp\/[^)\s]+\)/i.exec(body)?.[1]));
   employer ??= notSite(plausibleName(read.title ? /\bat\s+(.+?)\s*(?:\||\s[-–—]\s|$)/i.exec(read.title)?.[1] : null));
