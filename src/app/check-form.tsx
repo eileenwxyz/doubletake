@@ -1,14 +1,20 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import type { CheckResponse, Verdict } from "@/lib/check/types";
 
-type Result = {
-  title: string;
-  url: string;
-  publishDate: string | null;
-  excerpt: string;
-  source: "official" | "warnings";
+const VERDICT_LABELS: Record<Verdict, string> = {
+  strong_warning: "Strong warning signs",
+  mixed: "Mixed signals",
+  no_red_flags: "No red flags found",
+  not_enough: "Not enough information",
 };
+
+const DIRECTION_LABELS = {
+  reassures: "Reassures",
+  caution: "Caution",
+  neutral: "Neutral",
+} as const;
 
 const MAX_LENGTH = 200;
 const GENERIC_ERROR = "Something went wrong. Try again.";
@@ -16,7 +22,7 @@ const GENERIC_ERROR = "Something went wrong. Try again.";
 export default function CheckForm() {
   const [company, setCompany] = useState("");
   const [email, setEmail] = useState("");
-  const [results, setResults] = useState<Result[] | null>(null);
+  const [results, setResults] = useState<CheckResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -46,7 +52,7 @@ export default function CheckForm() {
       } else if (!response.ok) {
         setError(GENERIC_ERROR);
       } else {
-        setResults(data.results);
+        setResults(data as CheckResponse);
       }
     } catch {
       setError(GENERIC_ERROR);
@@ -72,7 +78,9 @@ export default function CheckForm() {
         <label className="flex flex-col gap-1">
           Recruiter&apos;s email (optional)
           <input
-            type="email"
+            type="text"
+            inputMode="email"
+            autoComplete="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             maxLength={MAX_LENGTH}
@@ -94,25 +102,84 @@ export default function CheckForm() {
         </p>
       )}
 
-      {results && (
-        <div className="mt-8">
-          {results.length === 0 ? (
-            <p>No results found.</p>
-          ) : (
+      {results && results.status === "need_more_detail" && (
+        <p className="mt-8">{results.message}</p>
+      )}
+
+      {results && results.status === "ok" && (
+        <div className="mt-8 flex flex-col gap-4">
+          <div>
+            <p>{VERDICT_LABELS[results.verdict]}</p>
+            {results.subtitle && (
+              <p className="text-sm text-foreground/70">{results.subtitle}</p>
+            )}
+          </div>
+
+          {results.companySays && (
+            <p className="text-sm">
+              The company says: &ldquo;{results.companySays.quote}&rdquo; (
+              {results.companySays.domain})
+            </p>
+          )}
+
+          {results.reasons.length > 0 && (
             <ul className="flex flex-col gap-4">
-              {results.map((result, index) => (
-                <li key={`${result.source}-${index}`}>
-                  <a href={result.url} className="underline" rel="noopener noreferrer">
-                    {result.title}
-                  </a>
+              {results.reasons.map((reason, index) => (
+                <li key={`reason-${index}`}>
+                  <p className="text-sm">
+                    {DIRECTION_LABELS[reason.direction]}: {reason.text}
+                  </p>
                   <div className="text-sm text-foreground/70">
-                    {result.source === "official" ? "Official presence" : "Warnings"}
-                    {result.publishDate && ` · ${result.publishDate}`}
+                    {reason.sourceType} · {reason.age}
+                    {reason.sourceUrl && (
+                      <>
+                        {" · "}
+                        <a
+                          href={reason.sourceUrl}
+                          className="underline"
+                          rel="noopener noreferrer"
+                        >
+                          {reason.sourceUrl}
+                        </a>
+                      </>
+                    )}
                   </div>
-                  {result.excerpt && <p className="text-sm">{result.excerpt}</p>}
                 </li>
               ))}
             </ul>
+          )}
+
+          {results.couldntFind.length > 0 && (
+            <div>
+              <p>Couldn&apos;t find</p>
+              <ul className="flex flex-col gap-4">
+                {results.couldntFind.map((item, index) => (
+                  <li key={`missing-${index}`} className="text-sm">
+                    {item.kind === "couldnt_check" ? "Couldn't check" : "Not published"}:{" "}
+                    {item.text}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {results.sources.length > 0 && (
+            <div>
+              <p>Sources</p>
+              <ul className="flex flex-col gap-4">
+                {results.sources.map((source, index) => (
+                  <li key={`source-${index}`}>
+                    <a href={source.url} className="underline" rel="noopener noreferrer">
+                      {source.url}
+                    </a>
+                    <div className="text-sm text-foreground/70">
+                      {source.type}
+                      {source.publishDate && ` · ${source.publishDate}`}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
         </div>
       )}

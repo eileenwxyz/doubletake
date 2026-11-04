@@ -1,13 +1,26 @@
-import { checkCompany } from "@/lib/parallel";
+import { domainLabel, hostOf, isRealDomain } from "@/lib/check/domains";
+import { runCheck } from "@/lib/check/run";
+import {
+  GENERIC_ERROR,
+  MONTHLY_CAP_ERROR,
+  VISITOR_LIMIT_ERROR,
+} from "@/lib/messages";
 import { clientIp, takeCheck } from "@/lib/rate-limit";
 
 const MAX_LENGTH = 200;
-const GENERIC_ERROR = "Something went wrong. Try again.";
-const VISITOR_LIMIT_ERROR = "You've used today's checks. Try again tomorrow.";
-const MONTHLY_CAP_ERROR = "Daily checks are used up. Try again tomorrow.";
 
 function badRequest(error: string) {
   return Response.json({ error }, { status: 400 });
+}
+
+const LOOKS_LIKE_WEBSITE = /^(https?:\/\/)?[a-z0-9-]+(\.[a-z0-9-]+)+(:\d+)?(\/\S*)?$/i;
+
+// Accepts a website typed into the company field ("acme.example" or
+// "https://acme.example/careers").
+function websiteFrom(value: string): string | null {
+  if (!LOOKS_LIKE_WEBSITE.test(value)) return null;
+  const host = hostOf(value);
+  return host && isRealDomain(host) ? host : null;
 }
 
 export async function POST(request: Request) {
@@ -18,26 +31,49 @@ export async function POST(request: Request) {
     return badRequest("Send a company name.");
   }
 
-  const { company, email } = (body ?? {}) as {
+  const { company, email, website } = (body ?? {}) as {
     company?: unknown;
     email?: unknown;
+    website?: unknown;
   };
 
   if (typeof company !== "string" || company.trim() === "") {
     return badRequest("Enter a company name.");
   }
-  const name = company.trim();
+  let name = company.trim();
   if (name.length > MAX_LENGTH) {
     return badRequest(`Company name must be ${MAX_LENGTH} characters or fewer.`);
   }
+  if (name.includes("@")) {
+    return badRequest("Put the recruiter's email in the email field.");
+  }
 
-  let emailDomain: string | null = null;
+  let site: string | null = null;
+  if (website !== undefined && website !== null && website !== "") {
+    if (typeof website !== "string" || website.trim().length > MAX_LENGTH) {
+      return badRequest("Enter a valid website.");
+    }
+    site = websiteFrom(website.trim());
+    if (!site) return badRequest("Enter a valid website.");
+  }
+  const typedSite = websiteFrom(name);
+  if (typedSite) {
+    site = site ?? typedSite;
+    name = domainLabel(typedSite) ?? name;
+  }
+
+  let senderAddress: string | null = null;
+  let senderDomain: string | null = null;
   if (email !== undefined && email !== null && email !== "") {
     if (typeof email !== "string") {
       return badRequest("Enter a valid email address.");
     }
-    const address = email.trim();
-    if (address.length > MAX_LENGTH) {
+    // Accepts "Name <address>" as pasted from a mail client; the display
+    // name is dropped and never stored or returned.
+    const raw = email.trim();
+    const bracketed = /<([^<>]+)>$/.exec(raw);
+    const address = (bracketed ? bracketed[1] : raw).trim();
+    if (raw.length > MAX_LENGTH) {
       return badRequest(`Email must be ${MAX_LENGTH} characters or fewer.`);
     }
     if (address !== "") {
@@ -45,7 +81,8 @@ export async function POST(request: Request) {
       if (!match) {
         return badRequest("Enter a valid email address.");
       }
-      emailDomain = match[1].toLowerCase();
+      senderAddress = address.toLowerCase();
+      senderDomain = match[1].toLowerCase().replace(/\.$/, "");
     }
   }
 
@@ -63,8 +100,13 @@ export async function POST(request: Request) {
   }
 
   try {
-    const results = await checkCompany(name, emailDomain);
-    return Response.json({ results });
+    const result = await runCheck({
+      company: name,
+      website: site,
+      senderAddress,
+      senderDomain,
+    });
+    return Response.json(result);
   } catch {
     // Deliberately no details: never surface upstream errors or secrets.
     return Response.json({ error: GENERIC_ERROR }, { status: 502 });
