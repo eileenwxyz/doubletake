@@ -1,0 +1,126 @@
+{
+  "status": "ok",
+  "companyName": "Acme",
+  "checkedAt": "2026-11-05T15:12:00.000Z",
+  "verdict": "no_red_flags",
+  "subtitle": "Company-only check: no recruiter email was given.",
+  "companySays": {
+    "quote": "Acme recruiters only contact candidates from the @acme.example domain.",
+    "domain": "acme.example"
+  },
+  "reasons": [
+    {
+      "direction": "reassures",
+      "text": "“Senior Anvil Engineer” is listed on careers.acme.example, Acme's own job listings.",
+      "sourceType": "Official",
+      "sourceUrl": "https://careers.acme.example/",
+      "age": "Published 2026-10-30 (6 days ago)"
+    },
+    {
+      "direction": "reassures",
+      "text": "Acme publishes the email domains its recruiters use: acme.example.",
+      "sourceType": "Official",
+      "sourceUrl": "https://www.acme.example/recruiting-fraud",
+      "age": "Published 2026-09-01 (2 months ago)"
+    },
+    {
+      "direction": "neutral",
+      "text": "The job is posted on LinkedIn under Acme, 2 weeks ago. LinkedIn doesn't verify job postings, so this alone doesn't show the job is real.",
+      "sourceType": "Other",
+      "sourceUrl": "https://www.linkedin.com/jobs/view/4012345678",
+      "age": "Date unknown"
+    }
+  ],
+  "allReasons": [
+    {
+      "direction": "reassures",
+      "text": "“Senior Anvil Engineer” is listed on careers.acme.example, Acme's own job listings.",
+      "sourceType": "Official",
+      "sourceUrl": "https://careers.acme.example/",
+      "age": "Published 2026-10-30 (6 days ago)"
+    },
+    {
+      "direction": "reassures",
+      "text": "Acme publishes the email domains its recruiters use: acme.example.",
+      "sourceType": "Official",
+      "sourceUrl": "https://www.acme.example/recruiting-fraud",
+      "age": "Published 2026-09-01 (2 months ago)"
+    },
+    {
+      "direction": "neutral",
+      "text": "The job is posted on LinkedIn under Acme, 2 weeks ago. LinkedIn doesn't verify job postings, so this alone doesn't show the job is real.",
+      "sourceType": "Other",
+      "sourceUrl": "https://www.linkedin.com/jobs/view/4012345678",
+      "age": "Date unknown"
+    },
+    {
+      "direction": "reassures",
+      "text": "acme.example is Acme's official website.",
+      "sourceType": "Official",
+      "sourceUrl": "https://www.acme.example/",
+      "age": "Date unknown"
+    },
+    {
+      "direction": "reassures",
+      "text": "Acme has a company listing on linkedin.com.",
+      "sourceType": "Directory",
+      "sourceUrl": "https://www.linkedin.com/company/acme-example",
+      "age": "Date unknown"
+    }
+  ],
+  "moreReasons": {},
+  "couldntFind": [],
+  "sources": [
+    {
+      "url": "https://www.acme.example/",
+      "type": "Official",
+      "publishDate": null
+    },
+    {
+      "url": "https://careers.acme.example/",
+      "type": "Official",
+      "publishDate": "2026-10-30"
+    },
+    {
+      "url": "https://www.acme.example/recruiting-fraud",
+      "type": "Official",
+      "publishDate": "2026-09-01"
+    },
+    {
+      "url": "https://www.linkedin.com/company/acme-example",
+      "type": "Directory",
+      "publishDate": null
+    },
+    {
+      "url": "https://www.linkedin.com/jobs/view/4012345678",
+      "type": "Other",
+      "publishDate": null
+    }
+  ],
+  "officialDomain": "acme.example",
+  "nextStep": {
+    "url": "https://www.acme.example/recruiting-fraud",
+    "kind": "fraud"
+  },
+  "recruitingFor": null,
+  "senderDomain": null,
+  "lookalike": null,
+  "searches": [
+    "Acme LinkedIn company page",
+    "Acme official website careers",
+    "Acme recruiting fraud notice email",
+    "Acme recruitment fraud",
+    "Acme job scam"
+  ],
+  "job": {
+    "title": "Senior Anvil Engineer",
+    "postingUrl": "https://www.linkedin.com/jobs/view/4012345678",
+    "site": "LinkedIn",
+    "posted": "2 weeks ago",
+    "postingOfficial": false,
+    "unnamedClient": false,
+    "client": null,
+    "careers": "listed",
+    "careersUrl": "https://careers.acme.example/"
+  }
+}

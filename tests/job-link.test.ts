@@ -800,3 +800,15 @@ describe("cutting off the other jobs a site lists", () => {
     expect(cutAtOtherJobs(text, MARKER)).toBe(`# Product Designer\n\n${DESCRIPTION}\n`);
   });
 });
+
+// ---- Screenshot fixture ----
+// The result docs/screenshots shows for this check. Run `npx vitest -u`
+// after a change to the check output, then `npm run screenshots`.
+describe("screenshot fixture", () => {
+  it("matches data/fixtures/screens/job-link.json", async () => {
+    acmePages(careersText("Open roles: Senior Anvil Engineer, Rocket Technician."));
+    const report = (await runCheck(req(null))) as CheckReport;
+    const fixed = { ...report, checkedAt: "2026-11-05T15:12:00.000Z" };
+    await expect(JSON.stringify(fixed, null, 2) + "\n").toMatchFileSnapshot("../data/fixtures/screens/job-link.json");
+  });
+});

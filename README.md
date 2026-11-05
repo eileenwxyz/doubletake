@@ -97,6 +97,19 @@ Run the unit tests (no live API calls; they use fixture data):
 npm test
 ```
 
+Retake the screenshots in `docs/screenshots/` after a change to the page
+(the first time, install the browser with `npx playwright install chromium`):
+
+```bash
+npm run screenshots
+```
+
+It builds the app, serves it and mocks the check API, so it needs no API key.
+Pass prefixes to retake only some, for example `npm run screenshots -- 07 17`.
+The results it shows come from `data/fixtures/`. If a change alters the check
+output, `npm test` fails on `data/fixtures/screens/`; update those files with
+`npx vitest run -u`, then retake the screenshots.
+
 ## Project layout
 
 - `src/app/`: pages and layout (App Router)
@@ -107,7 +120,10 @@ npm test
   "Example" results on the empty page and used in tests
 - `src/lib/copy.ts`: every user-facing string
 - `src/app/globals.css`: every color, font and spacing value, as CSS variables
-- `docs/screenshots/`: phone-width screenshots of each screen state
+- `docs/screenshots/`: phone-width screenshots of each screen state, taken by
+  `scripts/screenshots.mjs`
+- `data/fixtures/screens/`: results the check code produces for the job-link,
+  staffing agency and partial-check screenshots, kept current by the tests
 
 ## Environment variables and secrets
 
