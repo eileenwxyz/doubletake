@@ -221,3 +221,63 @@ describe("the company's proper name", () => {
     expect(tidyName("  acme   robotics ")).toBe("Acme Robotics");
   });
 });
+
+// Common ways companies say which domains their recruiters write from.
+// Fictional: Globex publishes its two recruiting domains on a careers help
+// page, the way some large employers do.
+describe("recruiting list phrasings", () => {
+  const PHRASINGS: Array<[string, string, string[]]> = [
+    [
+      "will only contact you from an @x or @y email address",
+      "## Recruiting scams\n\nGlobex will only contact you from an @globex.example or @xwf.globex.example email address.",
+      ["globex.example", "xwf.globex.example"],
+    ],
+    [
+      "emails from our recruiters come from",
+      "Emails from our recruiters come from @globex.example.",
+      ["globex.example"],
+    ],
+    [
+      "legitimate emails will come from",
+      "# Protect yourself from recruitment fraud\n\nLegitimate emails will come from @globex.example or @globexcareers.example.",
+      ["globex.example", "globexcareers.example"],
+    ],
+    [
+      "our recruiting emails are sent from",
+      "Our recruiting emails are sent from careers.globex.example.",
+      ["careers.globex.example"],
+    ],
+  ];
+
+  for (const [name, text, entries] of PHRASINGS) {
+    it(`reads "${name}"`, () => {
+      expect(findRecruitingList(text)?.entries).toEqual(entries);
+    });
+  }
+
+  it("still needs a recruiting context somewhere near", () => {
+    expect(findRecruitingList("## Billing\n\nGlobex will only contact you from an @globex.example email address.")).toBeNull();
+    expect(findRecruitingList("Newsletter emails come from news.globex.example.")).toBeNull();
+  });
+
+  it("puts the published list on the result", () => {
+    const page = "https://www.globex.example/careers/help/recruiting-scams";
+    const r = ok(
+      acmeInput({
+        company: "Globex",
+        senderAddress: "jordan@xwf.globex.example",
+        senderDomain: "xwf.globex.example",
+        officialHits: [
+          hit("https://www.globex.example/", "Globex | Insurance", "Globex insures homes and cars."),
+          hit(page, "Recruiting scams | Globex Careers Help", "How to spot recruiting scams at Globex."),
+        ],
+        reads: [read(page, "fraud", PHRASINGS[0][1])],
+      }),
+    );
+    expect(r.verdict).toBe("no_red_flags");
+    expect(r.reasons[0].text).toBe(
+      "The sender's domain xwf.globex.example is on the recruiting list Globex publishes on globex.example.",
+    );
+    expect(r.couldntFind.some((c) => c.text.includes("doesn't say which email domains"))).toBe(false);
+  });
+});

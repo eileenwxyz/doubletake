@@ -212,6 +212,7 @@ describe("LinkedIn posting", () => {
       posted: "2 weeks ago",
       companySlug: "acme-example",
       unnamedClient: false,
+      client: null,
     });
   });
 
@@ -615,7 +616,9 @@ Apply on the employer's site: ${CAREERS}?src=azjc
     expect(r.sources.find((s) => s.url === CLEAN)?.type).toBe("Other");
     expect(r.sources.filter((s) => s.url.includes("azjobconnection.gov")).every((s) => s.type !== "Official")).toBe(true);
     expect(r.reasons.some((x) => x.sourceUrl?.includes("azjobconnection.gov") && x.direction === "caution")).toBe(false);
-    expect(r.nextStep?.url).not.toContain("azjobconnection.gov");
+    // The agency didn't name its client: the next step is to ask which
+    // company the job is with, not a link.
+    expect(r.nextStep).toEqual({ url: null, kind: "ask_client" });
   });
 
   it("doesn't change the verdict because of the unnamed client", async () => {

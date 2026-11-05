@@ -14,9 +14,10 @@ import {
 import { CheckStepError, step } from "./errors";
 import { findOfficialDomain, pickListPage, planReads } from "./official";
 import { findRecruitingList } from "./text";
-import { buildReport, type JobInput } from "./report";
+import { buildReport, type JobInput, type PartySearch } from "./report";
+import { domainStem } from "./agency";
 import { LINKEDIN_DOMAIN } from "./domain-lists";
-import { pageKey, registrableDomain } from "./domains";
+import { hiringPlatform, isFreeEmailProvider, isLookalike, pageKey, registrableDomain } from "./domains";
 import {
   LINKEDIN_UNREADABLE_MESSAGE,
   NEED_MORE_DETAIL_MESSAGE,
@@ -53,6 +54,37 @@ function warningSearch(company: string, subject: string, senderDomain: string | 
   // Awaited later; until then a failure must not be an unhandled rejection.
   hits.catch(() => {});
   return { queries, hits };
+}
+
+// The warnings search, settled: a failure (other than a missing API key)
+// leaves no hits and marks the result partial instead of failing the check.
+async function settleWarnings(hits: Promise<SearchHit[]>): Promise<{ hits: SearchHit[]; failed: boolean }> {
+  try {
+    return { hits: await hits, failed: false };
+  } catch (error) {
+    if (isConfigError(error)) throw error;
+    console.error("Warnings search failed; continuing without it", {
+      name: error instanceof Error ? error.name : typeof error,
+    });
+    return { hits: [], failed: true };
+  }
+}
+
+// Searches about the client a staffing agency names: its official presence
+// and scam warnings, in parallel with the agency's own searches. Optional:
+// a failure leaves the client unconfirmed.
+function clientSearch(client: string) {
+  const officialQueries = [`${client} official website careers`];
+  const warningQueries = [`${client} recruitment fraud`, `${client} job scam`];
+  const official = search(`Find ${client}'s official website and careers page`, officialQueries);
+  const warnings = search(`Find job scam reports or warnings that name ${client}`, warningQueries);
+  official.catch(() => {});
+  warnings.catch(() => {});
+  const settle = async (): Promise<PartySearch> => {
+    const [o, w] = await Promise.all([settleWarnings(official), settleWarnings(warnings)]);
+    return { officialHits: o.hits, warningHits: w.hits, officialFailed: o.failed, warningsFailed: w.failed };
+  };
+  return { officialQueries, warningQueries, settle };
 }
 
 // A missing API key fails the whole check; any other failure of an optional
@@ -148,6 +180,7 @@ export async function runCheck(req: CheckRequest): Promise<CheckResponse> {
       site: "LinkedIn",
       posted: parsed.posted,
       unnamedClient: parsed.unnamedClient,
+      client: parsed.client,
     };
     // Only the name and title are kept; nothing else from the page.
     jobReads.push({
@@ -198,6 +231,7 @@ export async function runCheck(req: CheckRequest): Promise<CheckResponse> {
       site: link.platform,
       posted: null,
       unnamedClient: info.unnamedClient,
+      client: info.client,
     };
     jobReads.push(posting);
   } else if (link?.kind === "aggregator") {
@@ -222,6 +256,7 @@ export async function runCheck(req: CheckRequest): Promise<CheckResponse> {
       posted: null,
       siteDomain: link.domain,
       unnamedClient: info.unnamedClient,
+      client: info.client,
     };
     // Only the posting itself, not the other jobs the site lists.
     jobReads.push({ ...posting, text: info.body });
@@ -236,15 +271,21 @@ export async function runCheck(req: CheckRequest): Promise<CheckResponse> {
       ? `${company} (${pin})`
       : company;
   warnings ??= warningSearch(company, subject, senderDomain);
+  // A staffing agency's posting names its client: check the client too.
+  const clientCheck = job?.client ? clientSearch(job.client) : null;
 
   const officialQueries = [`${company} official website careers`, `${company} recruiting fraud notice email`];
   const officialObjective = `Find ${subject}'s official website, careers page, and any page where the company says which email addresses or domains its recruiters use or warns about recruiting fraud`;
-  const [officialHits, warningHits] = await Promise.all([
+  // The official search is required; if the warnings search fails, the
+  // result still comes back, marked partial.
+  const [officialHits, warningResult, clientHits] = await Promise.all([
     step("search official presence", () =>
       pin ? pinnedSearch(officialObjective, officialQueries, pin) : search(officialObjective, officialQueries),
     ),
-    step("search warnings", () => warnings!.hits),
+    step("search warnings", () => settleWarnings(warnings!.hits)),
+    clientCheck ? step("search client", () => clientCheck.settle()) : null,
   ]);
+  const warningHits = warningResult.hits;
 
   const found = await step("find official domain", () =>
     findOfficialDomain(company, req.website, officialHits, senderDomain),
@@ -256,8 +297,64 @@ export async function runCheck(req: CheckRequest): Promise<CheckResponse> {
   let reads: PageRead[] = [];
   const listHits: SearchHit[] = [];
   const listSearches: string[] = [];
+  let senderSiteHits: SearchHit[] | null = null;
+  let senderSiteQuery: string | null = null;
+  let agencyHits: SearchHit[] | null = null;
+  let agencyQuery: string | null = null;
+  let listSearchFailed = false;
   if (found.status === "found") {
     const domain = found.domain;
+
+    // The sender's own domain isn't the company's, a free email service, a
+    // hiring platform or a look-alike: it may be a staffing agency
+    // recruiting for the company. Search that domain alone, alongside the
+    // page reads. Optional: a failure leaves the sender rules as they are.
+    const senderRoot = senderDomain ? registrableDomain(senderDomain) : null;
+    let senderSite: Promise<SearchHit[] | null> = Promise.resolve(null);
+    if (
+      senderRoot &&
+      senderRoot !== domain &&
+      !isFreeEmailProvider(senderRoot) &&
+      !hiringPlatform(senderRoot) &&
+      !isLookalike(senderDomain!, domain, company)
+    ) {
+      senderSiteQuery = `${senderRoot} staffing agency recruiting`;
+      const query = senderSiteQuery;
+      senderSite = pinnedSearch(
+        `Find out which company owns ${senderRoot} and whether it is a staffing or recruiting agency`,
+        [query],
+        senderRoot,
+      ).catch((error) => {
+        if (isConfigError(error)) throw error;
+        console.error("Sender site search failed; continuing without it", {
+          name: error instanceof Error ? error.name : typeof error,
+        });
+        return null;
+      });
+      // Awaited after the page reads; until then a failure must not be an
+      // unhandled rejection.
+      senderSite.catch(() => {});
+    }
+
+    // A sender's domain built on another name plus recruiting words
+    // (roberthalf-careers.example) may imitate a staffing agency's real
+    // domain: look for that agency. Optional, like the search above.
+    const stem = senderSiteQuery && senderRoot ? domainStem(senderRoot) : null;
+    let agencySearch: Promise<SearchHit[] | null> = Promise.resolve(null);
+    if (stem) {
+      agencyQuery = `${stem} staffing agency official website`;
+      agencySearch = search(`Find the official website of the staffing or recruiting agency named ${stem}`, [
+        agencyQuery,
+      ]).catch((error) => {
+        if (isConfigError(error)) throw error;
+        console.error("Agency search failed; continuing without it", {
+          name: error instanceof Error ? error.name : typeof error,
+        });
+        return null;
+      });
+      agencySearch.catch(() => {});
+    }
+
     const planned = await step("plan page reads", () =>
       planReads(company, domain, officialHits, warningHits, req.locale),
     );
@@ -282,17 +379,18 @@ export async function runCheck(req: CheckRequest): Promise<CheckResponse> {
     // The posting's own careers link first: it is the page for this job.
     reads = [...batches[2], ...batches[0], ...batches[1]];
 
-    // The sender uses the company's own domain but the pages read carry no
-    // recruiting list: look once more, on the official domain only, for the
-    // recruiting fraud or verified email page and read the top result, so
-    // the answer doesn't depend on which page the first search surfaced.
-    // Optional: a failure here leaves the result as it was.
+    // A recruiter email was given but the pages read carry no recruiting
+    // list: look once more, on the official domain only, for the recruiting
+    // fraud or verified email page and read the top result, so the answer
+    // doesn't depend on which page the first search surfaced. This runs
+    // whatever the sender's domain (a free email service too), since the
+    // list is what the sender is compared with. Optional: a failure here
+    // leaves the result as it was, and the list is then "couldn't check".
     const hasList = reads.some(
       (r) => r.ok && registrableDomain(r.url) === domain && findRecruitingList(r.text),
     );
-    if (senderDomain && registrableDomain(senderDomain) === domain && !hasList) {
+    if (senderDomain && !hasList) {
       const query = `${company} recruitment fraud verified recruiter email domains`;
-      listSearches.push(query);
       try {
         const hits = await step("search recruiting list page", () =>
           pinnedSearch(
@@ -301,6 +399,7 @@ export async function runCheck(req: CheckRequest): Promise<CheckResponse> {
             domain,
           ),
         );
+        listSearches.push(query);
         listHits.push(...hits);
         const page = pickListPage(hits, domain, reads.map((r) => r.url));
         if (page) {
@@ -308,11 +407,17 @@ export async function runCheck(req: CheckRequest): Promise<CheckResponse> {
         }
       } catch (error) {
         if (isConfigError(error)) throw error;
+        listSearchFailed = true;
         console.error("Recruiting list search failed; continuing without it", {
           name: error instanceof CheckStepError && error.cause instanceof Error ? error.cause.name : "unknown",
         });
       }
     }
+
+    senderSiteHits = await step("search sender site", () => senderSite);
+    if (senderSiteHits && senderSiteQuery) listSearches.push(senderSiteQuery);
+    agencyHits = await step("search imitated agency", () => agencySearch);
+    if (agencyHits && agencyQuery) listSearches.push(agencyQuery);
 
     // Follow the company's own links to its job board to look for the job.
     // Optional: a failure here only means the careers check can't be done.
@@ -342,7 +447,24 @@ export async function runCheck(req: CheckRequest): Promise<CheckResponse> {
     reads: [...jobReads, ...reads],
     now: new Date(),
     locale: req.locale,
-    searches: [...extraSearches, ...officialQueries, ...warnings.queries, ...listSearches],
+    // A search that failed isn't listed: the result never implies it ran.
+    searches: [
+      ...extraSearches,
+      ...officialQueries,
+      ...(warningResult.failed ? [] : warnings.queries),
+      ...(clientCheck && clientHits
+        ? [
+            ...(clientHits.officialFailed ? [] : clientCheck.officialQueries),
+            ...(clientHits.warningsFailed ? [] : clientCheck.warningQueries),
+          ]
+        : []),
+      ...listSearches,
+    ],
     job,
+    client: clientHits,
+    senderSiteHits,
+    agencyHits,
+    listSearchFailed,
+    warningsFailed: warningResult.failed,
   }));
 }

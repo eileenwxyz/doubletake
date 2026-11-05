@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { glassdoorOverviewUrl, onBrandTld } from "@/lib/check/domains";
 import { buildReport } from "@/lib/check/report";
 import { findOfficialDomain } from "@/lib/check/official";
 import { classifySource, type SourceContext } from "@/lib/check/sources";
@@ -275,7 +276,12 @@ describe("Glassdoor employee pages", () => {
       "Acme is a scam of a company. Fake promises, fraud-level pay, stay away.",
     );
     const r = buildReport(acmeInput({ warningHits: [review] })) as CheckReport;
-    expect(r.sources.find((s) => s.url === review.url)?.type).toBe("Directory");
+    // Listed as the company's Glassdoor overview page, not the review.
+    expect(r.sources.find((s) => s.url.includes("glassdoor.com"))).toEqual({
+      url: "https://www.glassdoor.com/Overview/Working-at-Acme-EI_IE123456.11,15.htm",
+      type: "Directory",
+      publishDate: null,
+    });
     expect(r.reasons.some((x) => x.direction === "caution")).toBe(false);
     expect(r.verdict).toBe("no_red_flags");
   });
@@ -298,5 +304,98 @@ describe("jobscamscore.com", () => {
     expect(type("https://jobscamscore.com/company/acme.example", "Acme job scam score", "Acme score: 82")).toBe("Automated rating");
     // A page that isn't about the checked domain is general advice.
     expect(type("https://jobscamscore.com/company/acme", "Acme job scam score", "Acme score: 82")).toBe("General advice");
+  });
+});
+
+describe("Glassdoor links", () => {
+  it("works out the company's overview page from a review, interview or salary page", () => {
+    expect(glassdoorOverviewUrl("https://www.glassdoor.com/Reviews/Acme-Reviews-E123456.htm")).toBe(
+      "https://www.glassdoor.com/Overview/Working-at-Acme-EI_IE123456.11,15.htm",
+    );
+    expect(glassdoorOverviewUrl("https://www.glassdoor.co.uk/Interview/Acme-Robotics-Interview-Questions-E42.htm")).toBe(
+      "https://www.glassdoor.co.uk/Overview/Working-at-Acme-Robotics-EI_IE42.11,24.htm",
+    );
+    expect(glassdoorOverviewUrl("https://www.glassdoor.com/Salary/Acme-Salaries-E123456.htm")).toBe(
+      "https://www.glassdoor.com/Overview/Working-at-Acme-EI_IE123456.11,15.htm",
+    );
+    // A single review's own page carries no company ID.
+    expect(
+      glassdoorOverviewUrl("https://www.glassdoor.com/Reviews/Employee-Review-Acme-Terrible-managers-avoid-RVW98765.htm"),
+    ).toBeNull();
+  });
+
+  it("lists several Glassdoor pages for one company as its overview page, once", () => {
+    const pages = ["/Reviews/Acme-Reviews-E123456.htm", "/Salary/Acme-Salaries-E123456.htm"].map((path) =>
+      hit(`https://www.glassdoor.com${path}`, "Acme | Glassdoor", "Acme employee reviews and salaries."),
+    );
+    const r = buildReport(acmeInput({ warningHits: pages })) as CheckReport;
+    const glassdoor = r.sources.filter((s) => s.url.includes("glassdoor"));
+    expect(glassdoor).toEqual([
+      { url: "https://www.glassdoor.com/Overview/Working-at-Acme-EI_IE123456.11,15.htm", type: "Directory", publishDate: null },
+    ]);
+    // Merged with Acme's other directory listings, linking the overview.
+    const listing = r.allReasons?.find((x) => x.text.includes("glassdoor.com"));
+    expect(listing?.alsoFrom).toContainEqual(
+      expect.objectContaining({ url: "https://www.glassdoor.com/Overview/Working-at-Acme-EI_IE123456.11,15.htm" }),
+    );
+  });
+
+  it("shows a review it can't trace to the company as 'Glassdoor company page'", () => {
+    const url = "https://www.glassdoor.com/Reviews/Employee-Review-Acme-Terrible-managers-avoid-RVW98765.htm";
+    const r = buildReport(acmeInput({ warningHits: [hit(url, "Acme | Glassdoor", "Acme review.")] })) as CheckReport;
+    expect(r.sources.find((s) => s.url === url)).toEqual({
+      url,
+      type: "Directory",
+      publishDate: null,
+      label: "Glassdoor company page",
+    });
+    const listing = r.allReasons?.find((x) => x.text.includes("glassdoor.com"));
+    expect(listing?.alsoFrom?.find((s) => s.url === url)?.label).toBe("Glassdoor company page");
+  });
+});
+
+describe("brand top-level domains", () => {
+  // Fictional: Globex runs its own .globex TLD next to globex.example.
+  const globex: SourceContext = {
+    company: "Globex",
+    officialDomain: "globex.example",
+    linkedBoards: new Set(),
+    linkedDomains: new Set(),
+  };
+
+  it("counts a site on the company's own TLD as official", () => {
+    expect(onBrandTld("https://blog.globex/recruiting-scams", "Globex")).toBe(true);
+    expect(onBrandTld("https://blog.globex/", "Globex Inc.")).toBe(true);
+    expect(
+      classifySource("https://blog.globex/how-to-spot-scams", "Spot recruiting scams | Globex", "Scammers impersonate Globex recruiters.", globex),
+    ).toBe("Official");
+  });
+
+  it("doesn't give a company a generic TLD or a TLD that isn't its name", () => {
+    expect(onBrandTld("https://anything.shop/", "Shop")).toBe(false);
+    expect(onBrandTld("https://blog.globex/", "Initech")).toBe(false);
+    expect(onBrandTld("https://globex.example/", "Globex")).toBe(false);
+  });
+
+  it("doesn't show the company's own blog post about scams as a caution", () => {
+    const post = hit(
+      "https://blog.globex/safety/recruiting-scams",
+      "How to spot recruiting scams | Globex",
+      "Scammers sometimes impersonate Globex recruiters and send fake job offers.",
+    );
+    const r = buildReport(
+      acmeInput({
+        company: "Globex",
+        officialHits: [
+          hit("https://www.globex.example/", "Globex | Insurance", "Globex insures homes and cars."),
+          hit("https://www.globex.example/careers", "Careers | Globex", "Join Globex."),
+        ],
+        reads: [],
+        warningHits: [post],
+      }),
+    ) as CheckReport;
+    expect(r.sources.find((s) => s.url === post.url)?.type).toBe("Official");
+    expect(r.reasons.some((x) => x.direction === "caution")).toBe(false);
+    expect(r.verdict).toBe("no_red_flags");
   });
 });

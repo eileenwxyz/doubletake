@@ -87,10 +87,10 @@ export const DIRECTORIES: ReadonlyArray<SitePages> = [
   { domain: "tracxn.com" },
   { domain: "crunchbase.com" },
   // Employee reviews, interview and salary pages: about working at the
-  // company, not scam reports.
+  // company, not scam reports. Overview pages are the company's own listing.
   ...["glassdoor.com", "glassdoor.co.uk", "glassdoor.ca"].map((domain) => ({
     domain,
-    pathPattern: /^\/(reviews|interview|salary|salaries)\//,
+    pathPattern: /^\/(overview|reviews|interview|salary|salaries)\//,
   })),
 ];
 
@@ -212,4 +212,15 @@ export const JOB_AGGREGATORS: ReadonlyArray<{
 // above (lower case).
 export const GOV_JOB_ID_PARAMS: ReadonlySet<string> = new Set([
   "jobid", "job_id", "id", "jo", "joborderid", "jobordernumber", "jobno", "posting", "postingid",
+]);
+
+// Top-level domains that are words anyone can register under. A company
+// named after one of these ("Shop") doesn't own every site on it; any other
+// top-level domain equal to a company's name is that company's own brand
+// TLD (.google for Google), so its sites are official (see onBrandTld).
+export const GENERIC_TLDS: ReadonlySet<string> = new Set([
+  "com", "net", "org", "info", "biz", "app", "dev", "blog", "shop", "store", "online", "site",
+  "tech", "news", "jobs", "careers", "work", "works", "bank", "money", "health", "law", "agency",
+  "company", "group", "solutions", "services", "global", "digital", "cloud", "media", "design",
+  "studio", "consulting", "capital", "finance", "insurance", "energy", "systems", "network",
 ]);

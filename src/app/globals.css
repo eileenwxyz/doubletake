@@ -511,7 +511,7 @@ a {
   text-decoration: none;
 }
 
-.next-step:hover .next-step-label {
+a.next-step:hover .next-step-label {
   text-decoration: underline;
 }
 

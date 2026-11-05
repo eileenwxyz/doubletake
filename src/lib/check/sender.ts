@@ -25,7 +25,12 @@ export type SenderCase =
   | "free_no_domain"
   | "unrelated"
   | "unrelated_unread"
-  | "unknown_company";
+  | "unknown_company"
+  // Not connected to the company, but a confirmed staffing agency's own
+  // domain (set by the report, which checks the sender's site).
+  | "agency"
+  // Imitates a confirmed staffing agency's real domain (set by the report).
+  | "lookalike_agency";
 
 export type SenderResult = {
   rule: 1 | 2 | 3 | 4 | 5 | 6;

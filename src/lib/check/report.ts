@@ -1,14 +1,19 @@
 import {
   AGES,
   COULDNT_FIND,
+  LOOKALIKE_CHARS,
   NEED_MORE_DETAIL_MESSAGE,
   REASONS,
+  RESULT,
   SUBTITLES,
 } from "@/lib/copy";
-import { DEFAULT_LOCALE } from "./domain-lists";
+import { lookalikeChar, toUnicodeDomain } from "@/lib/lookalike-chars";
+import { imitatedAgency, senderAgency, type ImitatedAgency, type SenderAgency } from "./agency";
+import { DEFAULT_LOCALE, FIRST_HAND_DIRECTORIES } from "./domain-lists";
 import {
   boardKey,
   dedupeByUrl,
+  glassdoorOverviewUrl,
   hiringPlatform,
   isFreeEmailProvider,
   isPersonalUrl,
@@ -34,12 +39,13 @@ import {
   type RecruitingList,
 } from "./text";
 import {
+  type CheckReport,
   type CheckResponse,
   type CouldntFind,
   type Direction,
   type JobResult,
-  type NextStepKind,
   type PageRead,
+  type RecruitingFor,
   type Reason,
   type ReasonSource,
   type SearchHit,
@@ -67,6 +73,31 @@ export type CheckInput = {
   // reads with role "job"; its text is only used to see whether it says
   // the job has closed.
   job?: JobInput | null;
+  // Searches about the client a staffing agency's posting names
+  // (job.client): the client is checked too.
+  client?: PartySearch | null;
+  // A search limited to the sender's own domain, run when that domain isn't
+  // the company's. It shows whether the sender is a staffing agency.
+  senderSiteHits?: SearchHit[] | null;
+  // A search for the name a sender's domain is built on, run when that
+  // domain adds recruiting words to a name (roberthalf-careers.example). It
+  // shows whether the sender imitates a staffing agency's real domain.
+  agencyHits?: SearchHit[] | null;
+  // The search for the company's recruiting list page failed, so a missing
+  // list is "couldn't check", not "not published".
+  listSearchFailed?: boolean;
+  // The scam-warnings search failed. The result is partial: it never says
+  // reports were checked.
+  warningsFailed?: boolean;
+};
+
+export type PartySearch = {
+  officialHits: SearchHit[];
+  warningHits: SearchHit[];
+  // The official-presence search failed.
+  officialFailed?: boolean;
+  // The scam-warnings search failed.
+  warningsFailed?: boolean;
 };
 
 export type JobInput = {
@@ -82,6 +113,9 @@ export type JobInput = {
   // agency is what gets checked; the unnamed client is not a warning sign
   // (agencies often keep clients confidential).
   unnamedClient?: boolean;
+  // The client a staffing agency says it is hiring for. Both the agency
+  // and the client are checked (see CheckInput.client).
+  client?: string | null;
 };
 
 // Fewer distinct pieces of evidence than this beyond the domain itself is
@@ -94,7 +128,73 @@ type Evidence = {
   text: string;
   publishDate: string | null;
   type: SourceType;
+  // Shown instead of the address (see Source.label).
+  label?: string;
 };
+
+const isWarningAbout = (e: Evidence) =>
+  hasWarningLanguage(`${e.title ?? ""}\n${e.text}`) && !isQuestionPost(e.title, e.text);
+
+// A Glassdoor review, interview or salary page found as a directory listing
+// links to the company's Glassdoor overview page instead, or, when that
+// can't be worked out, is shown as "Glassdoor company page" so the review's
+// own title never shows. Several pages for one company become one.
+function linkGlassdoor(items: Evidence[]): Evidence[] {
+  const seen = new Set<string>();
+  const out: Evidence[] = [];
+  for (const e of items) {
+    let item = e;
+    const domain = registrableDomain(e.url) ?? "";
+    if (e.type === "Directory" && FIRST_HAND_DIRECTORIES.has(domain) && !/\/overview\//i.test(e.url)) {
+      const overview = glassdoorOverviewUrl(e.url);
+      item = overview ? { ...e, url: overview } : { ...e, label: RESULT.glassdoorCompanyPage };
+    }
+    const key = pageKey(item.url);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(item);
+  }
+  return out;
+}
+
+// The other company in a staffing agency check: its official domain, how
+// it was found, and the warnings that name it.
+type Party = {
+  name: string;
+  domain: string | null;
+  confirmed: boolean;
+  officialUrl: string | null;
+  // Authority pages and reports that warn about it by name.
+  warnings: Evidence[];
+  evidence: Evidence[];
+};
+
+function checkParty(company: string, search: PartySearch, locale: string): Party {
+  const found = search.officialFailed
+    ? ({ status: "none" } as const)
+    : findOfficialDomain(company, null, search.officialHits);
+  const domain = found.status === "found" ? found.domain : null;
+  const ctx: SourceContext = {
+    company,
+    officialDomain: domain,
+    linkedBoards: new Set(),
+    linkedDomains: new Set(),
+  };
+  const evidence = dedupeByUrl([...search.officialHits, ...search.warningHits], locale)
+    .filter((e) => !isPersonalUrl(e.url))
+    .map((e) => ({ ...e, type: classifySource(e.url, e.title, e.text, ctx) }));
+  const official = evidence.filter((e) => e.type === "Official");
+  return {
+    name: domain ? properName(company, official.map((e) => e.title)) : tidyName(company),
+    domain,
+    confirmed: domain !== null,
+    officialUrl: official[0]?.url ?? (domain ? `https://${domain}/` : null),
+    warnings: evidence.filter(
+      (e) => (e.type === "Authority" || e.type === "Report") && isWarningAbout(e),
+    ),
+    evidence,
+  };
+}
 
 type CandidateOptions = {
   // Shown even when an earlier reason cites the same page.
@@ -229,9 +329,11 @@ export function buildReport(input: CheckInput): CheckResponse {
       text: read?.role === "job" ? "" : read?.ok ? read.text : item.text,
     };
   });
-  const evidence: Evidence[] = dedupeByUrl(raw, locale)
-    .filter((e) => !isPersonalUrl(e.url))
-    .map((e) => ({ ...e, type: classifySource(e.url, e.title, e.text, ctx) }));
+  const evidence: Evidence[] = linkGlassdoor(
+    dedupeByUrl(raw, locale)
+      .filter((e) => !isPersonalUrl(e.url))
+      .map((e) => ({ ...e, type: classifySource(e.url, e.title, e.text, ctx) })),
+  );
 
   const official = evidence.filter((e) => e.type === "Official");
 
@@ -331,13 +433,24 @@ export function buildReport(input: CheckInput): CheckResponse {
   const thin = !officialDomain || (corroboration < MIN_EVIDENCE && !listingMeetsMinimum);
   const anyUnread = input.reads.some((r) => !r.ok);
 
+  // The sender's own site, when a search on it ran: is it a staffing agency?
+  const senderSite: SenderAgency | null =
+    senderRoot && input.senderSiteHits?.length && senderRoot !== officialDomain
+      ? senderAgency(senderRoot, input.senderSiteHits)
+      : null;
+  // A staffing agency whose real domain the sender's domain imitates.
+  const imitated: ImitatedAgency | null =
+    input.senderDomain && input.agencyHits?.length && !senderSite?.confirmed
+      ? imitatedAgency(input.senderDomain, input.agencyHits, [officialDomain])
+      : null;
+
   // ---- Verdict and subtitle ----
   let sender: SenderResult | null = null;
   let verdict: Verdict;
   let subtitle: string | null = null;
 
   if (input.senderDomain) {
-    sender = evaluateSender({
+    const base = evaluateSender({
       senderAddress: input.senderAddress,
       senderDomain: input.senderDomain,
       company,
@@ -346,15 +459,28 @@ export function buildReport(input: CheckInput): CheckResponse {
       officialUnread,
       linkedPlatforms: links.linkedPlatforms,
     });
-    if (sender.outcome === "strong_warning") verdict = "strong_warning";
-    else if (sender.outcome === "mixed") verdict = "mixed";
-    else if (sender.outcome === "not_enough" || thin) verdict = "not_enough";
+    // A sender's domain that isn't connected to the company but is a
+    // confirmed staffing agency's own site: the agency rule applies instead
+    // (see "Staffing agencies" below).
+    // One that imitates a confirmed agency's real domain is a look-alike of
+    // that agency, whatever else it is.
+    const unrelated = base.case === "unrelated" || base.case === "unrelated_unread";
+    const current: SenderResult =
+      unrelated && senderSite?.confirmed
+        ? { ...base, outcome: "neutral", case: "agency" }
+        : unrelated && imitated
+          ? { ...base, rule: 3, outcome: "strong_warning", case: "lookalike_agency", imitates: imitated.domain }
+          : base;
+    sender = current;
+    if (current.outcome === "strong_warning") verdict = "strong_warning";
+    else if (current.outcome === "mixed") verdict = "mixed";
+    else if (current.outcome === "not_enough" || thin) verdict = "not_enough";
     else verdict = "no_red_flags";
 
-    const passed = sender.outcome === "passes" || sender.outcome === "neutral";
-    if (sender.case === "unrelated_unread") {
+    const passed = current.outcome === "passes" || current.outcome === "neutral";
+    if (current.case === "unrelated_unread") {
       subtitle = SUBTITLES.pagesUnchecked;
-    } else if (!passed && sender.case !== "free_no_domain" && sender.case !== "unknown_company") {
+    } else if (!passed && current.case !== "free_no_domain" && current.case !== "unknown_company") {
       subtitle = SUBTITLES.notCompanyChannel;
     } else if (passed && (verdictWarnings.length || fraudNotice)) {
       subtitle = SUBTITLES.scammersUsedName;
@@ -374,6 +500,97 @@ export function buildReport(input: CheckInput): CheckResponse {
   }
   if (!subtitle && anyUnread) subtitle = SUBTITLES.pagesUnchecked;
   if (!subtitle && !input.senderDomain) subtitle = SUBTITLES.companyOnly;
+
+  // ---- Staffing agencies ----
+  // A staffing agency recruiting for a client it names: the posting's
+  // agency and the client it names, or the agency that owns the sender's
+  // domain and the company entered. Both are checked. The verdict is
+  // "mixed" unless both official domains are confirmed with no Authority or
+  // Report warnings about either (then "no red flags", saying we couldn't
+  // confirm they work together). A strong warning stays a strong warning.
+  const client =
+    input.job?.client && input.client ? checkParty(input.job.client, input.client, locale) : null;
+  const main: Party = {
+    name,
+    domain: officialDomain,
+    confirmed: domainConfirmed && !thin,
+    officialUrl: official[0]?.url ?? firstOfficialUrl,
+    warnings: verdictWarnings,
+    evidence: [],
+  };
+  let agencyParties: { agency: Party; client: Party } | null = null;
+  if (client) {
+    agencyParties = { agency: main, client };
+  } else if (sender?.case === "agency" && senderSite) {
+    agencyParties = {
+      agency: {
+        name: senderSite.name,
+        domain: senderSite.domain,
+        confirmed: true,
+        officialUrl: senderSite.url,
+        // Warnings that name the sender's domain, typed as being about the
+        // agency (a forum post naming brightpath.example is a report about
+        // the agency, not general advice about the company).
+        warnings: senderWarnings.filter((e) => {
+          const type = classifySource(e.url, e.title, e.text, {
+            company: senderSite.name,
+            officialDomain: senderSite.domain,
+            linkedBoards: new Set(),
+            linkedDomains: new Set(),
+          });
+          if (type !== "Authority" && type !== "Report") return false;
+          e.type = type;
+          return true;
+        }),
+        evidence: [],
+      },
+      client: main,
+    };
+  }
+  const warningsFailed = Boolean(input.warningsFailed || input.client?.warningsFailed);
+  let agencyMixed = false;
+  let recruitingFor: RecruitingFor | null = null;
+  if (agencyParties) {
+    const { agency, client: hiring } = agencyParties;
+    const senderOk = !sender || sender.outcome === "passes" || sender.outcome === "neutral";
+    const clean =
+      agency.confirmed &&
+      hiring.confirmed &&
+      agency.warnings.length === 0 &&
+      hiring.warnings.length === 0 &&
+      senderOk &&
+      !warningsFailed;
+    if (verdict !== "strong_warning") {
+      verdict = clean ? "no_red_flags" : "mixed";
+      agencyMixed = !clean;
+      // The agency subtitle explains the result, and wins over "Scammers
+      // have used this name" and the like.
+      subtitle = SUBTITLES.agencyLink(hiring.name);
+    }
+    recruitingFor = {
+      agency: agency.name,
+      agencyDomain: agency.domain ? toUnicodeDomain(agency.domain) : null,
+      client: hiring.name,
+      clientDomain: hiring.domain ? toUnicodeDomain(hiring.domain) : null,
+    };
+    // The client's own pages and warnings are sources too; the agency's own
+    // site (the sender's domain) is one of the two companies' official sites.
+    const known = new Set(evidence.map((e) => pageKey(e.url)));
+    const extra = [
+      ...(client?.evidence ?? []),
+      ...(sender?.case === "agency" && senderSite
+        ? senderSite.hits.map((h) => ({ ...h, type: "Official" as const }))
+        : []),
+    ];
+    for (const e of extra) {
+      if (known.has(pageKey(e.url))) continue;
+      known.add(pageKey(e.url));
+      evidence.push(e);
+    }
+  }
+  // Part of the check didn't finish: say so, whatever else the subtitle
+  // would have said.
+  if (warningsFailed || input.client?.officialFailed) subtitle = SUBTITLES.partial;
 
   // ---- Reasons ----
   const candidates: Candidate[] = [];
@@ -402,8 +619,14 @@ export function buildReport(input: CheckInput): CheckResponse {
   const hostsOf = (urls: string[]) => [...new Set(urls.map(displayHost))];
 
   if (sender && input.senderDomain) {
-    const d = input.senderDomain;
-    const o = officialDomain ?? "";
+    // Domains are shown as they read: punycode (xn--) decoded.
+    const d = toUnicodeDomain(input.senderDomain);
+    const o = toUnicodeDomain(officialDomain ?? "");
+    const odd =
+      sender.case === "lookalike" || sender.case === "lookalike_agency"
+        ? lookalikeChar(input.senderDomain, sender.imitates ?? o)
+        : null;
+    const how = odd ? LOOKALIKE_CHARS.describe(odd) : undefined;
     const listHost = list ? displayHost(list.url) : "";
     switch (sender.case) {
       case "on_list":
@@ -420,9 +643,9 @@ export function buildReport(input: CheckInput): CheckResponse {
         break;
       case "lookalike":
         if (sender.imitates && sender.imitates !== o) {
-          add(0, "caution", REASONS.imitatesListed(d, name, sender.imitates), list?.url ?? firstOfficialUrl, "Official");
+          add(0, "caution", REASONS.imitatesListed(d, name, toUnicodeDomain(sender.imitates), how), list?.url ?? firstOfficialUrl, "Official");
         } else {
-          add(0, "caution", REASONS.imitatesOfficial(d, name, o), firstOfficialUrl, "Official");
+          add(0, "caution", REASONS.imitatesOfficial(d, name, o, how), firstOfficialUrl, "Official");
         }
         break;
       case "hiring_linked":
@@ -446,6 +669,18 @@ export function buildReport(input: CheckInput): CheckResponse {
       case "unknown_company":
         add(0, "neutral", REASONS.unknownCompany(d, name), null, "Other");
         break;
+      case "agency":
+        add(0, "neutral", REASONS.senderAgency(d, senderSite!.name), senderSite!.url, "Official");
+        break;
+      case "lookalike_agency":
+        add(
+          0,
+          "caution",
+          REASONS.imitatesAgency(d, imitated!.name, toUnicodeDomain(imitated!.domain), name, o, how),
+          imitated!.url,
+          "Other",
+        );
+        break;
     }
     // The sender's domain decides the verdict, except when the evidence
     // minimum isn't met and it would otherwise have passed.
@@ -460,7 +695,7 @@ export function buildReport(input: CheckInput): CheckResponse {
   const companyOnly = !input.senderDomain;
   for (const w of authorityWarnings) {
     add(1, "caution", REASONS.authorityWarning(displayHost(w.url), name), w.url, undefined, {
-      decisive: companyOnly && verdict === "strong_warning",
+      decisive: (companyOnly && verdict === "strong_warning") || agencyMixed,
       fact: { key: "authority", text: (urls) => REASONS.authorityWarningMany(hostsOf(urls), name) },
     });
   }
@@ -478,6 +713,7 @@ export function buildReport(input: CheckInput): CheckResponse {
       posted: input.job.posted,
       postingOfficial: postingType === "Official",
       unnamedClient: input.job.unnamedClient ?? false,
+      client: input.job.client ?? null,
       careers: careers.result,
       careersUrl: careers.url,
     };
@@ -519,19 +755,45 @@ export function buildReport(input: CheckInput): CheckResponse {
       ? REASONS.reportWarning(displayHost(w.url), name)
       : REASONS.pageWarning(displayHost(w.url), name);
     add(2, "caution", text, w.url, undefined, {
-      decisive: report && companyOnly && verdict === "mixed",
+      decisive: report && ((companyOnly && verdict === "mixed") || agencyMixed),
       fact: report
         ? { key: "report", text: (urls) => REASONS.reportWarningMany(hostsOf(urls), name) }
         : { key: "page", text: (urls) => REASONS.pageWarningMany(hostsOf(urls), name) },
     });
   }
   for (const w of senderWarnings) {
-    add(2, "caution", REASONS.senderWarning(displayHost(w.url), input.senderDomain!), w.url, undefined, {
+    add(2, "caution", REASONS.senderWarning(displayHost(w.url), toUnicodeDomain(input.senderDomain!)), w.url, undefined, {
+      decisive: agencyMixed && agencyParties?.agency.warnings.includes(w),
       fact: {
         key: "sender",
-        text: (urls) => REASONS.senderWarningMany(hostsOf(urls), input.senderDomain!),
+        text: (urls) => REASONS.senderWarningMany(hostsOf(urls), toUnicodeDomain(input.senderDomain!)),
       },
     });
+  }
+  if (agencyParties) {
+    for (const party of [agencyParties.agency, agencyParties.client]) {
+      if (!party.confirmed) {
+        add(1, "caution", REASONS.partyUnconfirmed(party.name), null, "Other", { decisive: agencyMixed });
+      }
+    }
+  }
+  if (client) {
+    for (const w of client.warnings) {
+      const authority = w.type === "Authority";
+      add(
+        authority ? 1 : 2,
+        "caution",
+        authority
+          ? REASONS.authorityWarning(displayHost(w.url), client.name)
+          : REASONS.reportWarning(displayHost(w.url), client.name),
+        w.url,
+        w.type,
+        { decisive: agencyMixed },
+      );
+    }
+    if (client.confirmed && client.domain) {
+      add(4, "reassures", REASONS.officialSite(toUnicodeDomain(client.domain), client.name), client.officialUrl, "Official");
+    }
   }
   if (list) {
     add(3, "reassures", REASONS.publishesList(name, list.entries.map((e) => e.split("@").pop()).filter((v, i, a) => a.indexOf(v) === i).join(", ")), list.url, "Official");
@@ -543,7 +805,7 @@ export function buildReport(input: CheckInput): CheckResponse {
     });
   }
   if (officialDomain && official.length) {
-    add(4, "reassures", REASONS.officialSite(officialDomain, name), official[0].url, "Official");
+    add(4, "reassures", REASONS.officialSite(toUnicodeDomain(officialDomain), name), official[0].url, "Official");
   }
   for (const e of directories) {
     add(5, "reassures", REASONS.directoryListing(name, displayHost(e.url)), e.url, undefined, {
@@ -580,7 +842,9 @@ export function buildReport(input: CheckInput): CheckResponse {
 
   const sourceFor = (url: string): ReasonSource => {
     const match = evidence.find((e) => pageKey(e.url) === pageKey(url));
-    return { url, sourceType: typeOf(url), age: formatAge(match?.publishDate ?? null, now) };
+    const source: ReasonSource = { url, sourceType: typeOf(url), age: formatAge(match?.publishDate ?? null, now) };
+    if (match?.label) source.label = match.label;
+    return source;
   };
   const toReason = (c: Candidate): Reason => {
     const match = c.sourceUrl
@@ -593,6 +857,7 @@ export function buildReport(input: CheckInput): CheckResponse {
       sourceUrl: c.sourceUrl,
       age: formatAge(match?.publishDate ?? null, now),
     };
+    if (match?.label) reason.sourceLabel = match.label;
     if (c.urls.length > 1) reason.alsoFrom = c.urls.slice(1).map(sourceFor);
     return reason;
   };
@@ -625,7 +890,7 @@ export function buildReport(input: CheckInput): CheckResponse {
         (r) => (r.role === "fraud" || r.role === "careers") && fraudPageScore(r.url, r.title) > 0,
       );
       couldntFind.push(
-        readNotice
+        readNotice && !input.listSearchFailed
           ? { kind: "not_published", text: COULDNT_FIND.noRecruitingList(name), url: null }
           : { kind: "couldnt_check", text: COULDNT_FIND.recruitingListNotFound, url: null },
       );
@@ -642,13 +907,36 @@ export function buildReport(input: CheckInput): CheckResponse {
   if (job?.unnamedClient) {
     couldntFind.push({ kind: "couldnt_check", text: COULDNT_FIND.clientNotNamed(name), url: null });
   }
+  if (agencyParties) {
+    couldntFind.push({
+      kind: "couldnt_check",
+      text: COULDNT_FIND.agencyLink(agencyParties.agency.name, agencyParties.client.name),
+      url: null,
+    });
+  }
+  if (input.client?.officialFailed && input.job?.client) {
+    couldntFind.push({ kind: "couldnt_check", text: COULDNT_FIND.partyUnfinished(tidyName(input.job.client)), url: null });
+  }
+  if (warningsFailed) {
+    couldntFind.push({ kind: "couldnt_check", text: COULDNT_FIND.warningsUnfinished, url: null });
+  }
   if (job && job.title && job.careers === "couldnt_check") {
     couldntFind.push({ kind: "couldnt_check", text: COULDNT_FIND.noJobListings(name), url: null });
   }
 
   // ---- Primary next step ----
-  let nextStep: { url: string; kind: NextStepKind } | null = null;
-  if (officialDomain) {
+  let nextStep: CheckReport["nextStep"] = null;
+  // The step matches the rule the verdict was decided on.
+  if (sender?.case === "free_with_domain" && officialDomain) {
+    nextStep = { url: null, kind: "ask_email", domain: toUnicodeDomain(officialDomain) };
+  } else if (sender?.case === "lookalike" && officialDomain) {
+    const home = readOk.find((r) => r.role === "home")?.url ?? `https://${officialDomain}/`;
+    nextStep = { url: home, kind: "lookalike", domain: toUnicodeDomain(officialDomain) };
+  } else if (sender?.case === "lookalike_agency" && imitated) {
+    nextStep = { url: imitated.url, kind: "lookalike", domain: toUnicodeDomain(imitated.domain), name: imitated.name };
+  } else if (job?.unnamedClient) {
+    nextStep = { url: null, kind: "ask_client" };
+  } else if (officialDomain) {
     const ownHits = dedupeByUrl(input.officialHits, locale).filter(
       (h) => registrableDomain(h.url) === officialDomain,
     );
@@ -668,14 +956,18 @@ export function buildReport(input: CheckInput): CheckResponse {
   }
 
   const lookalike =
-    sender?.case === "lookalike" && input.senderDomain
-      ? { sender: input.senderDomain, imitates: sender.imitates ?? officialDomain ?? "" }
+    (sender?.case === "lookalike" || sender?.case === "lookalike_agency") && input.senderDomain
+      ? {
+          sender: toUnicodeDomain(input.senderDomain),
+          imitates: toUnicodeDomain(sender.imitates ?? officialDomain ?? ""),
+        }
       : null;
 
   const sources: Source[] = evidence.map((e) => ({
     url: e.url,
     type: e.type,
     publishDate: e.publishDate,
+    ...(e.label ? { label: e.label } : {}),
   }));
 
   return {
@@ -691,9 +983,10 @@ export function buildReport(input: CheckInput): CheckResponse {
     moreReasons: top.more,
     couldntFind,
     sources,
-    officialDomain,
+    officialDomain: officialDomain ? toUnicodeDomain(officialDomain) : null,
     nextStep,
-    senderDomain: input.senderDomain,
+    recruitingFor,
+    senderDomain: input.senderDomain ? toUnicodeDomain(input.senderDomain) : null,
     lookalike: lookalike && lookalike.imitates ? lookalike : null,
     searches: input.searches ?? [],
     job,

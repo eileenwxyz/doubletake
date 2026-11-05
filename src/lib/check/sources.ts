@@ -10,6 +10,7 @@ import {
   isDirectory,
   isGovernment,
   isReportSite,
+  onBrandTld,
   pageKey,
   registrableDomain,
 } from "./domains";
@@ -77,7 +78,11 @@ export function classifySource(
   const domain = registrableDomain(url);
   if (!domain) return "Other";
 
-  if (ctx.officialDomain && domain === ctx.officialDomain) return "Official";
+  // The company's own domain, or a site on its own brand TLD (blog.google
+  // for Google, whose domain is google.com).
+  if (ctx.officialDomain && (domain === ctx.officialDomain || onBrandTld(domain, ctx.company))) {
+    return "Official";
+  }
   if (hiringPlatform(domain) && ctx.linkedBoards.has(boardKey(url) ?? "")) {
     return "Official";
   }

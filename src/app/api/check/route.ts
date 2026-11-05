@@ -128,8 +128,12 @@ export async function POST(request: Request) {
       if (!match) {
         return badRequest(INPUT_ERRORS.badEmail);
       }
-      senderAddress = address.toLowerCase();
-      senderDomain = match[1].toLowerCase().replace(/\.$/, "");
+      // An internationalised domain is kept in its ASCII (punycode) form,
+      // as every other domain is compared; the result shows it decoded.
+      const typedDomain = match[1].toLowerCase().replace(/\.$/, "");
+      const asciiDomain = hostOf(typedDomain) ?? typedDomain;
+      senderAddress = `${address.slice(0, address.lastIndexOf("@")).toLowerCase()}@${asciiDomain}`;
+      senderDomain = asciiDomain;
     }
   }
 

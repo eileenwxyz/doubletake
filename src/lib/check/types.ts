@@ -48,12 +48,16 @@ export type Reason = {
   // one page ("Listed on 2 of Acme's own pages"). Absent for single-source
   // reasons and on results saved before merged reasons.
   alsoFrom?: ReasonSource[];
+  // Shown instead of the source's address when the address itself would
+  // show someone's words (see Source.label).
+  sourceLabel?: string;
 };
 
 export type ReasonSource = {
   url: string;
   sourceType: SourceType;
   age: string;
+  label?: string;
 };
 
 export type CouldntFind = {
@@ -66,9 +70,26 @@ export type Source = {
   url: string;
   type: SourceType;
   publishDate: string | null;
+  // Shown instead of the address ("Glassdoor company page" for a Glassdoor
+  // review whose address carries the review's title).
+  label?: string;
 };
 
-export type NextStepKind = "fraud" | "careers" | "site";
+// fraud, careers, site: a page on the company's own site.
+// ask_email: the recruiter wrote from a free email service although the
+// company has its own domain. lookalike: the sender's domain imitates the
+// company's. ask_client: a staffing agency didn't name its client.
+export type NextStepKind = "fraud" | "careers" | "site" | "ask_email" | "lookalike" | "ask_client";
+
+// A staffing agency and the client company it says it is recruiting for,
+// both checked. The agency is named by the posting (or is the owner of the
+// sender's domain); the client by the posting (or is the company entered).
+export type RecruitingFor = {
+  agency: string;
+  agencyDomain: string | null;
+  client: string;
+  clientDomain: string | null;
+};
 
 export type CheckReport = {
   status: "ok";
@@ -93,9 +114,19 @@ export type CheckReport = {
   couldntFind: CouldntFind[];
   sources: Source[];
   officialDomain: string | null;
-  // The one link the page puts first: the company's recruiting fraud page,
-  // else its careers page, else its website. Null without an official domain.
-  nextStep: { url: string; kind: NextStepKind } | null;
+  // The one step the page puts first. It matches the rule the verdict was
+  // decided on: ask for an email from the company's domain, contact the
+  // company through its own domain, or ask which company an agency's job is
+  // with. Otherwise the company's recruiting fraud page, else its careers
+  // page, else its website. url is null for a step that is a question to
+  // ask, not a page; domain is the company's official domain. Null without
+  // an official domain (and no step to ask).
+  // name is who to contact when it isn't the company checked (the staffing
+  // agency a look-alike domain imitates).
+  nextStep: { url: string | null; kind: NextStepKind; domain?: string; name?: string } | null;
+  // Set when a staffing agency is recruiting for a client it names: both
+  // are checked and the header names both. Absent on older results.
+  recruitingFor?: RecruitingFor | null;
   // The sender's domain when a recruiter email was given (never the full
   // address).
   senderDomain: string | null;
@@ -131,6 +162,9 @@ export type JobResult = {
   // A staffing agency posted the job for a client it doesn't name; the
   // agency is what was checked.
   unnamedClient: boolean;
+  // The client a staffing agency says it is hiring for, when it names one.
+  // Absent on older results.
+  client?: string | null;
   careers: CareersResult;
   // The page the careers result comes from.
   careersUrl: string | null;
