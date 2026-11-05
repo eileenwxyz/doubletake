@@ -1,0 +1,105 @@
+{
+  "status": "ok",
+  "companyName": "Acme",
+  "checkedAt": "2026-11-05T15:12:00.000Z",
+  "verdict": "no_red_flags",
+  "subtitle": "Part of the check didn't finish.",
+  "companySays": {
+    "quote": "Acme recruiters only contact candidates from the @acme.example domain.",
+    "domain": "acme.example"
+  },
+  "reasons": [
+    {
+      "direction": "reassures",
+      "text": "Acme publishes the email domains its recruiters use: acme.example.",
+      "sourceType": "Official",
+      "sourceUrl": "https://www.acme.example/recruiting-fraud",
+      "age": "Published 2026-09-01 (2 months ago)"
+    },
+    {
+      "direction": "reassures",
+      "text": "acme.example is Acme's official website.",
+      "sourceType": "Official",
+      "sourceUrl": "https://www.acme.example/",
+      "age": "Date unknown"
+    }
+  ],
+  "allReasons": [
+    {
+      "direction": "reassures",
+      "text": "Acme publishes the email domains its recruiters use: acme.example.",
+      "sourceType": "Official",
+      "sourceUrl": "https://www.acme.example/recruiting-fraud",
+      "age": "Published 2026-09-01 (2 months ago)"
+    },
+    {
+      "direction": "reassures",
+      "text": "acme.example is Acme's official website.",
+      "sourceType": "Official",
+      "sourceUrl": "https://www.acme.example/",
+      "age": "Date unknown"
+    },
+    {
+      "direction": "reassures",
+      "text": "Acme has company listings on linkedin.com and crunchbase.com.",
+      "sourceType": "Directory",
+      "sourceUrl": "https://www.linkedin.com/company/acme-example",
+      "age": "Date unknown",
+      "alsoFrom": [
+        {
+          "url": "https://www.crunchbase.com/organization/acme-example",
+          "sourceType": "Directory",
+          "age": "Date unknown"
+        }
+      ]
+    }
+  ],
+  "moreReasons": {},
+  "couldntFind": [
+    {
+      "kind": "couldnt_check",
+      "text": "We couldn't finish searching for scam reports.",
+      "url": null
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://www.acme.example/",
+      "type": "Official",
+      "publishDate": null
+    },
+    {
+      "url": "https://careers.acme.example/",
+      "type": "Official",
+      "publishDate": "2026-10-30"
+    },
+    {
+      "url": "https://www.acme.example/recruiting-fraud",
+      "type": "Official",
+      "publishDate": "2026-09-01"
+    },
+    {
+      "url": "https://www.linkedin.com/company/acme-example",
+      "type": "Directory",
+      "publishDate": null
+    },
+    {
+      "url": "https://www.crunchbase.com/organization/acme-example",
+      "type": "Directory",
+      "publishDate": null
+    }
+  ],
+  "officialDomain": "acme.example",
+  "nextStep": {
+    "url": "https://www.acme.example/recruiting-fraud",
+    "kind": "fraud"
+  },
+  "recruitingFor": null,
+  "senderDomain": null,
+  "lookalike": null,
+  "searches": [
+    "Acme official website careers",
+    "Acme recruiting fraud notice email"
+  ],
+  "job": null
+}

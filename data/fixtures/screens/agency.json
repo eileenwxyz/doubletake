@@ -1,0 +1,149 @@
+{
+  "status": "ok",
+  "companyName": "Brightpath Staffing",
+  "checkedAt": "2026-11-05T15:12:00.000Z",
+  "verdict": "no_red_flags",
+  "subtitle": "Through a staffing agency. We couldn't confirm it works with Globex.",
+  "companySays": null,
+  "reasons": [
+    {
+      "direction": "reassures",
+      "text": "“Claims Analyst” is listed on brightpathstaffing.example, Brightpath Staffing's own job listings.",
+      "sourceType": "Official",
+      "sourceUrl": "https://www.brightpathstaffing.example/jobs",
+      "age": "Date unknown"
+    },
+    {
+      "direction": "neutral",
+      "text": "The job is posted on LinkedIn under Brightpath Staffing, 3 days ago. LinkedIn doesn't verify job postings, so this alone doesn't show the job is real.",
+      "sourceType": "Other",
+      "sourceUrl": "https://www.linkedin.com/jobs/view/4088888888",
+      "age": "Date unknown"
+    },
+    {
+      "direction": "reassures",
+      "text": "globex.example is Globex's official website.",
+      "sourceType": "Official",
+      "sourceUrl": "https://www.globex.example/",
+      "age": "Date unknown"
+    }
+  ],
+  "allReasons": [
+    {
+      "direction": "reassures",
+      "text": "“Claims Analyst” is listed on brightpathstaffing.example, Brightpath Staffing's own job listings.",
+      "sourceType": "Official",
+      "sourceUrl": "https://www.brightpathstaffing.example/jobs",
+      "age": "Date unknown"
+    },
+    {
+      "direction": "neutral",
+      "text": "The job is posted on LinkedIn under Brightpath Staffing, 3 days ago. LinkedIn doesn't verify job postings, so this alone doesn't show the job is real.",
+      "sourceType": "Other",
+      "sourceUrl": "https://www.linkedin.com/jobs/view/4088888888",
+      "age": "Date unknown"
+    },
+    {
+      "direction": "reassures",
+      "text": "globex.example is Globex's official website.",
+      "sourceType": "Official",
+      "sourceUrl": "https://www.globex.example/",
+      "age": "Date unknown"
+    },
+    {
+      "direction": "reassures",
+      "text": "brightpathstaffing.example is Brightpath Staffing's official website.",
+      "sourceType": "Official",
+      "sourceUrl": "https://www.brightpathstaffing.example/",
+      "age": "Date unknown"
+    },
+    {
+      "direction": "reassures",
+      "text": "Brightpath Staffing has a company listing on linkedin.com.",
+      "sourceType": "Directory",
+      "sourceUrl": "https://www.linkedin.com/company/brightpath-staffing",
+      "age": "Date unknown"
+    }
+  ],
+  "moreReasons": {
+    "reassures": 1
+  },
+  "couldntFind": [
+    {
+      "kind": "not_published",
+      "text": "Brightpath Staffing doesn't say which email domains its recruiters use on the pages checked.",
+      "url": null
+    },
+    {
+      "kind": "couldnt_check",
+      "text": "We couldn't confirm that Brightpath Staffing works with Globex.",
+      "url": null
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://www.brightpathstaffing.example/",
+      "type": "Official",
+      "publishDate": null
+    },
+    {
+      "url": "https://www.brightpathstaffing.example/jobs",
+      "type": "Official",
+      "publishDate": null
+    },
+    {
+      "url": "https://www.linkedin.com/company/brightpath-staffing",
+      "type": "Directory",
+      "publishDate": null
+    },
+    {
+      "url": "https://www.linkedin.com/jobs/view/4088888888",
+      "type": "Other",
+      "publishDate": null
+    },
+    {
+      "url": "https://www.globex.example/",
+      "type": "Official",
+      "publishDate": null
+    },
+    {
+      "url": "https://www.globex.example/careers",
+      "type": "Official",
+      "publishDate": null
+    }
+  ],
+  "officialDomain": "brightpathstaffing.example",
+  "nextStep": {
+    "url": "https://www.brightpathstaffing.example/jobs",
+    "kind": "careers"
+  },
+  "recruitingFor": {
+    "agency": "Brightpath Staffing",
+    "agencyDomain": "brightpathstaffing.example",
+    "client": "Globex",
+    "clientDomain": "globex.example"
+  },
+  "senderDomain": null,
+  "lookalike": null,
+  "searches": [
+    "Brightpath Staffing LinkedIn company page",
+    "Brightpath Staffing official website careers",
+    "Brightpath Staffing recruiting fraud notice email",
+    "Brightpath Staffing recruitment fraud",
+    "Brightpath Staffing job scam",
+    "Globex official website careers",
+    "Globex recruitment fraud",
+    "Globex job scam"
+  ],
+  "job": {
+    "title": "Claims Analyst",
+    "postingUrl": "https://www.linkedin.com/jobs/view/4088888888",
+    "site": "LinkedIn",
+    "posted": "3 days ago",
+    "postingOfficial": false,
+    "unnamedClient": false,
+    "client": "Globex",
+    "careers": "listed",
+    "careersUrl": "https://www.brightpathstaffing.example/jobs"
+  }
+}
