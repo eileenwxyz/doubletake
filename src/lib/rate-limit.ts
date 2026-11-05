@@ -9,6 +9,11 @@ import { Redis } from "@upstash/redis";
 //   HMAC-SHA256 hash of their IP address. The IP itself is never stored.
 // - All visitors together get MONTHLY_CHECK_CAP checks per UTC calendar month.
 //
+// Keys start with the deployment's environment (VERCEL_ENV: production,
+// preview or development), so checks on a preview deployment never use up
+// production's limits. Each environment has its own monthly cap
+// (MONTHLY_CHECK_CAP is set per environment in Vercel).
+//
 // A check is only counted when it is allowed, and both counters are checked
 // and updated in one Lua script, so concurrent requests cannot overshoot.
 
@@ -80,6 +85,20 @@ function monthlyCap(): number {
   return envLimit("MONTHLY_CHECK_CAP", DEFAULT_MONTHLY_CAP);
 }
 
+// The deployment's environment, for key names: VERCEL_ENV on Vercel,
+// "development" elsewhere. Anything unexpected is reduced to letters,
+// digits and hyphens so it can't change a key's shape.
+export function limitEnvironment(): string {
+  const value = (process.env.VERCEL_ENV ?? "").toLowerCase().replace(/[^a-z0-9-]/g, "");
+  return value || "development";
+}
+
+// The two counters a check uses: the visitor's for the day and everyone's
+// for the month, in this environment.
+export function limitKeys(env: string, day: string, ipHash: string): [string, string] {
+  return [`checks:${env}:visitor:${day}:${ipHash}`, `checks:${env}:total:${day.slice(0, 7)}`];
+}
+
 function hashIp(ip: string, secret: string): string {
   return createHmac("sha256", secret).update(ip).digest("hex");
 }
@@ -108,7 +127,6 @@ export async function takeCheck(ip: string): Promise<LimitResult> {
 
   const now = new Date();
   const day = now.toISOString().slice(0, 10); // YYYY-MM-DD (UTC)
-  const month = day.slice(0, 7); // YYYY-MM (UTC)
 
   const nextDay = Date.UTC(
     now.getUTCFullYear(),
@@ -120,7 +138,7 @@ export async function takeCheck(ip: string): Promise<LimitResult> {
   const dayTtl = Math.ceil((nextDay - now.getTime()) / 1000) + 3600;
   const monthTtl = Math.ceil((nextMonth - now.getTime()) / 1000) + 86400;
 
-  const keys = [`checks:visitor:${day}:${hashIp(ip, secret)}`, `checks:total:${month}`];
+  const keys = limitKeys(limitEnvironment(), day, hashIp(ip, secret));
   let reply: unknown;
   try {
     reply = await store.eval(SCRIPT, keys, [dailyLimit(), monthlyCap(), dayTtl, monthTtl]);

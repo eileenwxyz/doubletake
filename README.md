@@ -143,6 +143,13 @@ runs past 55 seconds is given back. Successful responses include
 - `DAILY_CHECK_LIMIT` (optional): checks per visitor per day, defaults to 10.
 - `MONTHLY_CHECK_CAP` (optional): checks for everyone per month, defaults to 1000.
 
+Counters are kept per environment: every key starts with `VERCEL_ENV`
+(`production`, `preview` or `development`), as in
+`checks:production:visitor:<day>:<hash>` and `checks:preview:total:<month>`.
+Checks on a preview deployment never use up production's limits, and each
+environment has its own monthly cap (set `MONTHLY_CHECK_CAP` per environment
+in Vercel).
+
 In production, if storage or `IP_HASH_SECRET` is missing or Redis can't be
 reached, checks fail with a generic error instead of calling Parallel without
 limits. In local development without these variables, limits are skipped.
