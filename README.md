@@ -106,9 +106,9 @@ npm run screenshots
 
 It builds the app, serves it and mocks the check API, so it needs no API key.
 Pass prefixes to retake only some, for example `npm run screenshots -- 07 17`.
-The results it shows come from `data/fixtures/`. If a change alters the check
-output, `npm test` fails on `data/fixtures/screens/`; update those files with
-`npx vitest run -u`, then retake the screenshots.
+The screenshots don't update on their own: retake them whenever a change
+alters a screen. The results they show come from saved files in
+`data/fixtures/`.
 
 ## Project layout
 
@@ -122,8 +122,8 @@ output, `npm test` fails on `data/fixtures/screens/`; update those files with
 - `src/app/globals.css`: every color, font and spacing value, as CSS variables
 - `docs/screenshots/`: phone-width screenshots of each screen state, taken by
   `scripts/screenshots.mjs`
-- `data/fixtures/screens/`: results the check code produces for the job-link,
-  staffing agency and partial-check screenshots, kept current by the tests
+- `data/fixtures/screens/`: saved results for the job-link, staffing agency
+  and partial-check screenshots
 
 ## Environment variables and secrets
 

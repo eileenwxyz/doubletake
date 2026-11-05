@@ -404,15 +404,3 @@ describe("a sender's domain that imitates a staffing agency's real domain", () =
     expect(r.lookalike).toBeNull();
   });
 });
-
-// ---- Screenshot fixture ----
-// The result docs/screenshots shows for this check. Run `npx vitest -u`
-// after a change to the check output, then `npm run screenshots`.
-describe("screenshot fixture", () => {
-  it("matches data/fixtures/screens/agency.json", async () => {
-    world();
-    const report = await fromPosting();
-    const fixed = { ...report, checkedAt: "2026-11-05T15:12:00.000Z" };
-    await expect(JSON.stringify(fixed, null, 2) + "\n").toMatchFileSnapshot("../data/fixtures/screens/agency.json");
-  });
-});

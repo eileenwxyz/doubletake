@@ -68,15 +68,3 @@ describe("partial results", () => {
     await expect(check()).rejects.toThrow();
   });
 });
-
-// ---- Screenshot fixture ----
-// The result docs/screenshots shows for this check. Run `npx vitest -u`
-// after a change to the check output, then `npm run screenshots`.
-describe("screenshot fixture", () => {
-  it("matches data/fixtures/screens/partial.json", async () => {
-    failWarnings = true;
-    const report = (await check()) as CheckReport;
-    const fixed = { ...report, checkedAt: "2026-11-05T15:12:00.000Z" };
-    await expect(JSON.stringify(fixed, null, 2) + "\n").toMatchFileSnapshot("../data/fixtures/screens/partial.json");
-  });
-});

@@ -4,7 +4,8 @@
 // It serves the production build (the dev server adds its own badge and
 // toasts) and mocks POST /api/check, so no real check runs and no API key
 // is needed. Results come from data/fixtures: the four example results and,
-// in data/fixtures/screens, results the check code produced in the tests.
+// in data/fixtures/screens, results saved for the job-link, staffing agency
+// and partial-check screens.
 //
 // Retake only some: `npm run screenshots -- 07 17` (matches by prefix).
 // The first time, install the browser: `npx playwright install chromium`.
