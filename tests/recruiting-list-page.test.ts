@@ -112,9 +112,51 @@ describe("looking for the recruiting list on the company's own domain", () => {
     expect(b.reasons.map((x) => x.direction)).toEqual(a.reasons.map((x) => x.direction));
   });
 
-  it("doesn't search again when the sender isn't on the company's domain", async () => {
-    await check("someone@unrelated-mail.example");
-    expect(calls.search.some((c) => c.options?.includeDomains?.includes("brightwater.example"))).toBe(false);
+  it("looks for the list for any recruiter email, a free email address too", async () => {
+    const r = await check("brightwater.recruiting@gmail.com");
+    const listSearch = calls.search.find((c) => c.options?.includeDomains?.includes("brightwater.example"));
+    expect(listSearch?.queries[0]).toMatch(/recruitment fraud/);
+    expect(r.verdict).toBe("strong_warning");
+    expect(r.companySays?.quote).toContain("brightwatertalent.example");
+    // The list exists, so it isn't "Not published".
+    expect(r.couldntFind.some((c) => c.kind === "not_published" && c.text.includes("doesn't say which"))).toBe(false);
+  });
+
+  // The first search also finds a careers page, so a notice page was read.
+  const CAREERS = "https://www.brightwater.example/careers";
+  function withCareersPage(listSearch: (call: SearchCall) => SearchHit[]) {
+    pages[CAREERS] = { title: "Careers | Brightwater Bank", text: `# Careers at Brightwater Bank\n\n${FILLER}` };
+    searchResults = (call) => {
+      // The list search, with its domain filter or (after a failure) without.
+      if (call.queries.some((q) => q.includes("verified recruiter email domains"))) return listSearch(call);
+      if (call.queries.some((q) => q.includes("official website"))) {
+        return [...brightwaterSearch(call), hit(CAREERS, "Careers | Brightwater Bank", "Careers at Brightwater Bank.")];
+      }
+      return [];
+    };
+  }
+
+  it("says Not published only when the targeted search still finds no list", async () => {
+    withCareersPage(() => []);
+    const r = await check("brightwater.recruiting@gmail.com");
+    expect(r.couldntFind).toContainEqual({
+      kind: "not_published",
+      text: "Brightwater Bank doesn't say which email domains its recruiters use on the pages checked.",
+      url: null,
+    });
+  });
+
+  it("says Couldn't check when the targeted search fails", async () => {
+    withCareersPage(() => {
+      throw new Error("Search timed out");
+    });
+    const r = await check("brightwater.recruiting@gmail.com");
+    expect(r.couldntFind).toContainEqual({
+      kind: "couldnt_check",
+      text: "We couldn't find a list of recruiting email domains on the pages we read.",
+      url: null,
+    });
+    expect(r.searches.some((q) => q.includes("verified recruiter email domains"))).toBe(false);
   });
 
   it("doesn't search again when the first reads already found the list", async () => {

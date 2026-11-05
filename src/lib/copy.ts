@@ -62,8 +62,8 @@ export const SUBTITLES = {
   // The warnings search failed; the rest of the check finished.
   partial: "Part of the check didn't finish.",
   // A staffing agency and the client it names both check out.
-  agencyLink: (agency: string, client: string) =>
-    `We couldn't confirm ${agency} works with ${client}.`,
+  agencyLink: (client: string) =>
+    `Through a staffing agency. We couldn't confirm it works with ${client}.`,
 } as const;
 
 export const NEED_MORE_DETAIL_MESSAGE =
@@ -142,6 +142,9 @@ export const REASONS = {
     `The sender's domain ${d} is not connected to ${company}'s official domain ${o}, and some of ${company}'s pages couldn't be read to check for other recruiting domains.`,
   senderAgency: (d: string, agency: string) =>
     `The sender's domain ${d} belongs to ${agency}, a staffing agency. Agencies often recruit for other companies.`,
+  // A sender's domain that copies a staffing agency's real domain.
+  imitatesAgency: (d: string, agency: string, agencyDomain: string, company: string, o: string, how?: string) =>
+    `The sender's domain ${d} imitates ${agencyDomain}, the real domain of the staffing agency ${agency}${how ? `: it ${how}` : ""}. It isn't connected to ${company}'s official domain ${o} either.`,
   partyUnconfirmed: (company: string) => `${company}'s official website couldn't be confirmed.`,
   unknownCompany: (d: string, company: string) =>
     `No official domain for ${company} was found to compare ${d} with.`,

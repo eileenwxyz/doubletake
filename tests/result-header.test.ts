@@ -101,6 +101,15 @@ describe("next step", () => {
     expect(text(html)).toContain(`Don't reply. Contact ${base.companyName} through northwind.example instead.`);
   });
 
+  it("names the staffing agency a look-alike imitates, not the company checked", () => {
+    const html = nextStep({
+      ...base,
+      nextStep: { url: "https://brightpath.example/", kind: "lookalike", domain: "brightpath.example", name: "Brightpath Staffing" },
+    });
+    expect(text(html)).toContain("Don't reply. Contact Brightpath Staffing through brightpath.example instead.");
+    expect(text(html)).not.toContain(base.companyName);
+  });
+
   it("asks which company an agency's job is with", () => {
     const html = nextStep({ ...base, nextStep: { url: null, kind: "ask_client" } });
     expect(html).not.toContain("href");

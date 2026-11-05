@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { glassdoorOverviewUrl } from "@/lib/check/domains";
+import { glassdoorOverviewUrl, onBrandTld } from "@/lib/check/domains";
 import { buildReport } from "@/lib/check/report";
 import { findOfficialDomain } from "@/lib/check/official";
 import { classifySource, type SourceContext } from "@/lib/check/sources";
@@ -351,5 +351,51 @@ describe("Glassdoor links", () => {
     });
     const listing = r.allReasons?.find((x) => x.text.includes("glassdoor.com"));
     expect(listing?.alsoFrom?.find((s) => s.url === url)?.label).toBe("Glassdoor company page");
+  });
+});
+
+describe("brand top-level domains", () => {
+  // Fictional: Globex runs its own .globex TLD next to globex.example.
+  const globex: SourceContext = {
+    company: "Globex",
+    officialDomain: "globex.example",
+    linkedBoards: new Set(),
+    linkedDomains: new Set(),
+  };
+
+  it("counts a site on the company's own TLD as official", () => {
+    expect(onBrandTld("https://blog.globex/recruiting-scams", "Globex")).toBe(true);
+    expect(onBrandTld("https://blog.globex/", "Globex Inc.")).toBe(true);
+    expect(
+      classifySource("https://blog.globex/how-to-spot-scams", "Spot recruiting scams | Globex", "Scammers impersonate Globex recruiters.", globex),
+    ).toBe("Official");
+  });
+
+  it("doesn't give a company a generic TLD or a TLD that isn't its name", () => {
+    expect(onBrandTld("https://anything.shop/", "Shop")).toBe(false);
+    expect(onBrandTld("https://blog.globex/", "Initech")).toBe(false);
+    expect(onBrandTld("https://globex.example/", "Globex")).toBe(false);
+  });
+
+  it("doesn't show the company's own blog post about scams as a caution", () => {
+    const post = hit(
+      "https://blog.globex/safety/recruiting-scams",
+      "How to spot recruiting scams | Globex",
+      "Scammers sometimes impersonate Globex recruiters and send fake job offers.",
+    );
+    const r = buildReport(
+      acmeInput({
+        company: "Globex",
+        officialHits: [
+          hit("https://www.globex.example/", "Globex | Insurance", "Globex insures homes and cars."),
+          hit("https://www.globex.example/careers", "Careers | Globex", "Join Globex."),
+        ],
+        reads: [],
+        warningHits: [post],
+      }),
+    ) as CheckReport;
+    expect(r.sources.find((s) => s.url === post.url)?.type).toBe("Official");
+    expect(r.reasons.some((x) => x.direction === "caution")).toBe(false);
+    expect(r.verdict).toBe("no_red_flags");
   });
 });

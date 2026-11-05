@@ -2,7 +2,7 @@
 // fictional and every company domain uses the reserved .example suffix;
 // LinkedIn appears only as the platform that hosts postings.
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { agencyClient, looksLikeAgency, senderAgency } from "@/lib/check/agency";
+import { agencyClient, agencyPage, domainStem, looksLikeAgency, senderAgency } from "@/lib/check/agency";
 import { parseJobLink, parseLinkedInPosting } from "@/lib/check/job-link";
 import { buildReport } from "@/lib/check/report";
 import type { CheckReport, PageRead, PageRole, SearchHit } from "@/lib/check/types";
@@ -62,6 +62,8 @@ type World = {
   globexFound?: boolean;
   globexWarnings?: SearchHit[];
   senderSite?: SearchHit[];
+  // Results of the search for an agency a sender's domain may imitate.
+  agencySearch?: SearchHit[];
 };
 
 function world(options: World = {}) {
@@ -88,6 +90,7 @@ function world(options: World = {}) {
       ];
     }
     if (pinned.includes("brightpath.example")) return options.senderSite ?? [];
+    if (call.queries.some((q) => q.endsWith("staffing agency official website"))) return options.agencySearch ?? [];
     if (call.queries.some((q) => q.startsWith("Globex official website"))) {
       return globexFound
         ? [
@@ -155,7 +158,7 @@ describe("an agency posting that names its client", () => {
   it("checks both and says we couldn't confirm they work together", async () => {
     const r = await fromPosting();
     expect(r.verdict).toBe("no_red_flags");
-    expect(r.subtitle).toBe("We couldn't confirm Brightpath Staffing works with Globex.");
+    expect(r.subtitle).toBe("Through a staffing agency. We couldn't confirm it works with Globex.");
     expect(r.recruitingFor).toEqual({
       agency: "Brightpath Staffing",
       agencyDomain: "brightpathstaffing.example",
@@ -180,7 +183,8 @@ describe("an agency posting that names its client", () => {
     });
     const r = await fromPosting();
     expect(r.verdict).toBe("mixed");
-    expect(r.subtitle).not.toBe("We couldn't confirm Brightpath Staffing works with Globex.");
+    // The subtitle still explains the agency case.
+    expect(r.subtitle).toBe("Through a staffing agency. We couldn't confirm it works with Globex.");
     expect(r.reasons).toContainEqual(
       expect.objectContaining({
         direction: "caution",
@@ -233,7 +237,7 @@ describe("a recruiter email from a staffing agency's own domain", () => {
     world({ senderSite: BRIGHTPATH_SITE });
     const r = await fromEmail();
     expect(r.verdict).toBe("no_red_flags");
-    expect(r.subtitle).toBe("We couldn't confirm Brightpath Staffing works with Globex.");
+    expect(r.subtitle).toBe("Through a staffing agency. We couldn't confirm it works with Globex.");
     expect(r.recruitingFor).toEqual({
       agency: "Brightpath Staffing",
       agencyDomain: "brightpath.example",
@@ -298,5 +302,105 @@ describe("a recruiter email from a staffing agency's own domain", () => {
       name: "Brightpath Staffing",
       confirmed: true,
     });
+  });
+});
+
+// ---- Which agency page the reason links to ----
+
+describe("the agency's page to cite", () => {
+  const PDF = `${SENDER_SITE}investors/annual-report-2025.pdf`;
+  const ABOUT = `${SENDER_SITE}about`;
+
+  it("prefers the homepage, then the about page, never a PDF or investor document", () => {
+    const pdf = hit(PDF, "Annual report 2025 | Brightpath Staffing", "Brightpath Staffing is a staffing agency.");
+    const investors = hit(`${SENDER_SITE}investors`, "Investor relations | Brightpath Staffing", "Shareholder information.");
+    const about = hit(ABOUT, "About us | Brightpath Staffing", "Brightpath Staffing is a recruiting agency.");
+    const home = hit(SENDER_SITE, "Brightpath Staffing | Staffing agency", "Brightpath Staffing places analysts.");
+    expect(agencyPage([pdf, about, home], "brightpath.example")).toBe(SENDER_SITE);
+    expect(agencyPage([pdf, investors, about], "brightpath.example")).toBe(ABOUT);
+    expect(agencyPage([pdf, investors], "brightpath.example")).toBe("https://brightpath.example/");
+  });
+
+  it("links the homepage in the result, though the annual report ranked first", async () => {
+    world({
+      senderSite: [
+        hit(PDF, "Annual report 2025 | Brightpath Staffing", "Brightpath Staffing is a staffing agency."),
+        ...BRIGHTPATH_SITE,
+      ],
+    });
+    const r = await fromEmail();
+    expect(r.reasons[0]).toMatchObject({
+      text: expect.stringContaining("a staffing agency"),
+      sourceUrl: SENDER_SITE,
+    });
+  });
+});
+
+// ---- The agency subtitle wins ----
+
+describe("the agency subtitle", () => {
+  it("replaces 'Scammers have used this name' when the client publishes a fraud notice", async () => {
+    world({ senderSite: BRIGHTPATH_SITE });
+    pages[GLOBEX_CAREERS] = {
+      title: "Careers | Globex",
+      text: `# Careers at Globex\n\n${GLOBEX_FILLER}\n\nScammers sometimes impersonate Globex recruiters and send fake job offers.`,
+    };
+    const r = await fromEmail();
+    expect(r.verdict).toBe("no_red_flags");
+    expect(r.subtitle).toBe("Through a staffing agency. We couldn't confirm it works with Globex.");
+  });
+});
+
+// ---- A sender's domain that imitates an agency's real domain ----
+
+describe("a sender's domain that imitates a staffing agency's real domain", () => {
+  it("knows the name the domain is built on", () => {
+    expect(domainStem("brightpath-careers.example")).toBe("brightpath");
+    expect(domainStem("jobs-brightpath.example")).toBe("brightpath");
+    expect(domainStem("brightpathhr.example")).toBe("brightpath");
+    expect(domainStem("brightpath.example")).toBeNull();
+  });
+
+  it("says it looks like the agency's real domain, not only that it isn't the client's", async () => {
+    world({ agencySearch: BRIGHTPATH_SITE });
+    const r = (await runCheck({
+      company: "Globex",
+      website: null,
+      senderAddress: "recruiter@brightpath-careers.example",
+      senderDomain: "brightpath-careers.example",
+      locale: "en-us",
+    })) as CheckReport;
+    expect(r.verdict).toBe("strong_warning");
+    expect(r.reasons[0]).toMatchObject({
+      direction: "caution",
+      text:
+        "The sender's domain brightpath-careers.example imitates brightpath.example, the real domain of the staffing agency Brightpath Staffing. " +
+        "It isn't connected to Globex's official domain globex.example either.",
+      sourceUrl: SENDER_SITE,
+    });
+    expect(r.lookalike).toEqual({ sender: "brightpath-careers.example", imitates: "brightpath.example" });
+    expect(r.nextStep).toEqual({
+      url: SENDER_SITE,
+      kind: "lookalike",
+      domain: "brightpath.example",
+      name: "Brightpath Staffing",
+    });
+    expect(r.recruitingFor).toBeNull();
+    expect(r.searches).toContain("brightpath staffing agency official website");
+  });
+
+  it("stays 'not connected' when no such agency is found", async () => {
+    const r = (await runCheck({
+      company: "Globex",
+      website: null,
+      senderAddress: "recruiter@brightpath-careers.example",
+      senderDomain: "brightpath-careers.example",
+      locale: "en-us",
+    })) as CheckReport;
+    expect(r.verdict).toBe("strong_warning");
+    expect(r.reasons[0].text).toBe(
+      "The sender's domain brightpath-careers.example is not connected to Globex's official domain globex.example.",
+    );
+    expect(r.lookalike).toBeNull();
   });
 });

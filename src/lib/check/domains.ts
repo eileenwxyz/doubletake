@@ -3,6 +3,7 @@ import {
   DEFAULT_LOCALE,
   DIRECTORIES,
   FREE_EMAIL_PROVIDERS,
+  GENERIC_TLDS,
   HIRING_PLATFORMS,
   JOB_AGGREGATORS,
   LOCALE_SEGMENT,
@@ -61,6 +62,17 @@ export function isRealDomain(hostOrUrl: string): boolean {
     parsed.isPrivate === true ||
     RESERVED_TEST_SUFFIXES.has(parsed.publicSuffix ?? "")
   );
+}
+
+// A site on the company's own brand top-level domain: blog.google for
+// Google. The TLD must be one label equal to the company's core name (see
+// coreName), not a private suffix and not a generic word (GENERIC_TLDS).
+export function onBrandTld(hostOrUrl: string, company: string): boolean {
+  const parsed = parseHost(hostOrUrl);
+  const suffix = parsed?.publicSuffix ?? "";
+  if (!parsed || parsed.isPrivate === true || suffix.includes(".") || GENERIC_TLDS.has(suffix)) return false;
+  const name = compactName(coreName(company));
+  return name.length >= 3 && suffix === name;
 }
 
 // ftc.gov, scamwatch.gov.au: the public suffix itself contains "gov", so a

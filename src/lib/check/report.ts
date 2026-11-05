@@ -8,7 +8,7 @@ import {
   SUBTITLES,
 } from "@/lib/copy";
 import { lookalikeChar, toUnicodeDomain } from "@/lib/lookalike-chars";
-import { senderAgency, type SenderAgency } from "./agency";
+import { imitatedAgency, senderAgency, type ImitatedAgency, type SenderAgency } from "./agency";
 import { DEFAULT_LOCALE, FIRST_HAND_DIRECTORIES } from "./domain-lists";
 import {
   boardKey,
@@ -79,6 +79,13 @@ export type CheckInput = {
   // A search limited to the sender's own domain, run when that domain isn't
   // the company's. It shows whether the sender is a staffing agency.
   senderSiteHits?: SearchHit[] | null;
+  // A search for the name a sender's domain is built on, run when that
+  // domain adds recruiting words to a name (roberthalf-careers.example). It
+  // shows whether the sender imitates a staffing agency's real domain.
+  agencyHits?: SearchHit[] | null;
+  // The search for the company's recruiting list page failed, so a missing
+  // list is "couldn't check", not "not published".
+  listSearchFailed?: boolean;
   // The scam-warnings search failed. The result is partial: it never says
   // reports were checked.
   warningsFailed?: boolean;
@@ -431,6 +438,11 @@ export function buildReport(input: CheckInput): CheckResponse {
     senderRoot && input.senderSiteHits?.length && senderRoot !== officialDomain
       ? senderAgency(senderRoot, input.senderSiteHits)
       : null;
+  // A staffing agency whose real domain the sender's domain imitates.
+  const imitated: ImitatedAgency | null =
+    input.senderDomain && input.agencyHits?.length && !senderSite?.confirmed
+      ? imitatedAgency(input.senderDomain, input.agencyHits, [officialDomain])
+      : null;
 
   // ---- Verdict and subtitle ----
   let sender: SenderResult | null = null;
@@ -450,10 +462,15 @@ export function buildReport(input: CheckInput): CheckResponse {
     // A sender's domain that isn't connected to the company but is a
     // confirmed staffing agency's own site: the agency rule applies instead
     // (see "Staffing agencies" below).
+    // One that imitates a confirmed agency's real domain is a look-alike of
+    // that agency, whatever else it is.
+    const unrelated = base.case === "unrelated" || base.case === "unrelated_unread";
     const current: SenderResult =
-      (base.case === "unrelated" || base.case === "unrelated_unread") && senderSite?.confirmed
+      unrelated && senderSite?.confirmed
         ? { ...base, outcome: "neutral", case: "agency" }
-        : base;
+        : unrelated && imitated
+          ? { ...base, rule: 3, outcome: "strong_warning", case: "lookalike_agency", imitates: imitated.domain }
+          : base;
     sender = current;
     if (current.outcome === "strong_warning") verdict = "strong_warning";
     else if (current.outcome === "mixed") verdict = "mixed";
@@ -546,7 +563,9 @@ export function buildReport(input: CheckInput): CheckResponse {
     if (verdict !== "strong_warning") {
       verdict = clean ? "no_red_flags" : "mixed";
       agencyMixed = !clean;
-      if (clean) subtitle = SUBTITLES.agencyLink(agency.name, hiring.name);
+      // The agency subtitle explains the result, and wins over "Scammers
+      // have used this name" and the like.
+      subtitle = SUBTITLES.agencyLink(hiring.name);
     }
     recruitingFor = {
       agency: agency.name,
@@ -603,7 +622,10 @@ export function buildReport(input: CheckInput): CheckResponse {
     // Domains are shown as they read: punycode (xn--) decoded.
     const d = toUnicodeDomain(input.senderDomain);
     const o = toUnicodeDomain(officialDomain ?? "");
-    const odd = sender.case === "lookalike" ? lookalikeChar(input.senderDomain, sender.imitates ?? o) : null;
+    const odd =
+      sender.case === "lookalike" || sender.case === "lookalike_agency"
+        ? lookalikeChar(input.senderDomain, sender.imitates ?? o)
+        : null;
     const how = odd ? LOOKALIKE_CHARS.describe(odd) : undefined;
     const listHost = list ? displayHost(list.url) : "";
     switch (sender.case) {
@@ -649,6 +671,15 @@ export function buildReport(input: CheckInput): CheckResponse {
         break;
       case "agency":
         add(0, "neutral", REASONS.senderAgency(d, senderSite!.name), senderSite!.url, "Official");
+        break;
+      case "lookalike_agency":
+        add(
+          0,
+          "caution",
+          REASONS.imitatesAgency(d, imitated!.name, toUnicodeDomain(imitated!.domain), name, o, how),
+          imitated!.url,
+          "Other",
+        );
         break;
     }
     // The sender's domain decides the verdict, except when the evidence
@@ -859,7 +890,7 @@ export function buildReport(input: CheckInput): CheckResponse {
         (r) => (r.role === "fraud" || r.role === "careers") && fraudPageScore(r.url, r.title) > 0,
       );
       couldntFind.push(
-        readNotice
+        readNotice && !input.listSearchFailed
           ? { kind: "not_published", text: COULDNT_FIND.noRecruitingList(name), url: null }
           : { kind: "couldnt_check", text: COULDNT_FIND.recruitingListNotFound, url: null },
       );
@@ -901,6 +932,8 @@ export function buildReport(input: CheckInput): CheckResponse {
   } else if (sender?.case === "lookalike" && officialDomain) {
     const home = readOk.find((r) => r.role === "home")?.url ?? `https://${officialDomain}/`;
     nextStep = { url: home, kind: "lookalike", domain: toUnicodeDomain(officialDomain) };
+  } else if (sender?.case === "lookalike_agency" && imitated) {
+    nextStep = { url: imitated.url, kind: "lookalike", domain: toUnicodeDomain(imitated.domain), name: imitated.name };
   } else if (job?.unnamedClient) {
     nextStep = { url: null, kind: "ask_client" };
   } else if (officialDomain) {
@@ -923,7 +956,7 @@ export function buildReport(input: CheckInput): CheckResponse {
   }
 
   const lookalike =
-    sender?.case === "lookalike" && input.senderDomain
+    (sender?.case === "lookalike" || sender?.case === "lookalike_agency") && input.senderDomain
       ? {
           sender: toUnicodeDomain(input.senderDomain),
           imitates: toUnicodeDomain(sender.imitates ?? officialDomain ?? ""),

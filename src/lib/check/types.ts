@@ -121,7 +121,9 @@ export type CheckReport = {
   // page, else its website. url is null for a step that is a question to
   // ask, not a page; domain is the company's official domain. Null without
   // an official domain (and no step to ask).
-  nextStep: { url: string | null; kind: NextStepKind; domain?: string } | null;
+  // name is who to contact when it isn't the company checked (the staffing
+  // agency a look-alike domain imitates).
+  nextStep: { url: string | null; kind: NextStepKind; domain?: string; name?: string } | null;
   // Set when a staffing agency is recruiting for a client it names: both
   // are checked and the header names both. Absent on older results.
   recruitingFor?: RecruitingFor | null;

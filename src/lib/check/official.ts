@@ -16,6 +16,7 @@ import {
   isGovernment,
   jobAggregator,
   isReportDomain,
+  onBrandTld,
   pageKey,
   registrableDomain,
 } from "./domains";
@@ -220,7 +221,8 @@ export function planReads(
   }
 
   const warnings = dedupeByUrl(warningHits, locale)
-    .filter((hit) => registrableDomain(hit.url) !== officialDomain)
+    // The company's own pages, including any on its brand TLD, aren't warnings.
+    .filter((hit) => registrableDomain(hit.url) !== officialDomain && !onBrandTld(hit.url, company))
     .filter((hit) => {
       const text = `${hit.title ?? ""}\n${hit.text}`;
       return (

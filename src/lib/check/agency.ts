@@ -1,8 +1,8 @@
 // Staffing agencies: spotting an agency, the client a posting says it is
 // recruiting for, and whether a sender's domain is an agency's own site.
 
-import { compactName, domainLabel, registrableDomain } from "./domains";
-import { findOfficialDomain } from "./official";
+import { compactName, domainLabel, isLookalike, registrableDomain } from "./domains";
+import { findOfficialDomain, isThirdParty } from "./official";
 import { plainText, properNameFromTitles } from "./text";
 import type { SearchHit } from "./types";
 
@@ -94,7 +94,90 @@ export function senderAgency(senderRoot: string, hits: readonly SearchHit[]): Se
     name,
     domain: senderRoot,
     confirmed: found.status === "found" && found.domain === senderRoot,
-    url: own[0]?.url ?? null,
+    url: agencyPage(own, senderRoot),
     hits: own,
   };
+}
+
+// Documents that make a poor link for "this is a staffing agency": files
+// such as PDFs, and investor pages (annual reports, filings).
+const DOCUMENT = /\.(pdf|docx?|xlsx?|pptx?)$/i;
+const INVESTOR = /(investor|annual[-_ ]?report|\/ir\/|sec[-_ ]filings?|\b10-?k\b|proxy[-_ ]statement|shareholder)/i;
+const ABOUT = /\/(about|about-us|who-we-are|company|our-story)(\/|$)/i;
+
+// The agency's page to cite: its homepage, else its about page, else any
+// other page that isn't a document or an investor page, else its homepage
+// address.
+export function agencyPage(hits: readonly SearchHit[], domain: string): string {
+  const pathOf = (url: string) => {
+    try {
+      return new URL(url).pathname;
+    } catch {
+      return url;
+    }
+  };
+  const usable = hits.filter((h) => {
+    const path = pathOf(h.url);
+    return !DOCUMENT.test(path) && !INVESTOR.test(`${path} ${h.title ?? ""}`);
+  });
+  const rank = (h: SearchHit) => {
+    const path = pathOf(h.url).replace(/\/+$/, "");
+    if (path === "" || /^\/[a-z]{2}(-[a-z]{2})?$/i.test(path)) return 0;
+    if (ABOUT.test(path)) return 1;
+    return 2;
+  };
+  const best = [...usable].sort((a, b) => rank(a) - rank(b))[0];
+  return best?.url ?? `https://${domain}/`;
+}
+
+// Words a look-alike recruiting domain adds to the name it copies:
+// roberthalf-careers.example, jobs-roberthalf.example, roberthalfhr.example.
+const ADDED_WORDS =
+  /^(careers?|jobs?|hr|recruit\w*|talent|hiring|apply|team|staff|mail|email|work|official|global|online|portal|us|usa|inc)$/;
+const ADDED_AFFIX = /^(careers?|jobs?|recruiting|recruitment|talent|hiring|hr)|(careers?|jobs?|recruiting|recruitment|talent|hiring|hr)$/;
+
+// The name a look-alike recruiting domain is built on, with the added
+// recruiting words taken off ("roberthalf" for roberthalf-careers.example),
+// or null when nothing was added.
+export function domainStem(domain: string): string | null {
+  const label = (domainLabel(domain) ?? "").toLowerCase();
+  const words = label.split("-").filter((w) => w !== "" && !ADDED_WORDS.test(w));
+  let stem = words.join("");
+  for (let i = 0; i < 2; i++) {
+    const next = stem.replace(ADDED_AFFIX, "");
+    if (next.length < 3) break;
+    stem = next;
+  }
+  return stem.length >= 3 && stem !== label.replace(/-/g, "") ? stem : null;
+}
+
+export type ImitatedAgency = {
+  name: string;
+  // The agency's real domain.
+  domain: string;
+  // The agency's page to cite.
+  url: string;
+};
+
+// A confirmed staffing agency whose real domain the sender's domain
+// imitates (roberthalf-careers.example for roberthalf.example), from a
+// search for the name the sender's domain is built on (see domainStem).
+// Null when no such agency was found.
+export function imitatedAgency(
+  senderDomain: string,
+  hits: readonly SearchHit[],
+  exclude: ReadonlyArray<string | null> = [],
+): ImitatedAgency | null {
+  const stem = domainStem(senderDomain);
+  const senderRoot = registrableDomain(senderDomain);
+  if (!stem || !senderRoot) return null;
+  const domains = [...new Set(hits.map((h) => registrableDomain(h.url)))].filter(
+    (d): d is string => d !== null && d !== senderRoot && !exclude.includes(d) && !isThirdParty(d),
+  );
+  for (const domain of domains) {
+    if (!isLookalike(senderDomain, domain, stem)) continue;
+    const agency = senderAgency(domain, hits);
+    if (agency?.confirmed) return { name: agency.name, domain, url: agency.url ?? `https://${domain}/` };
+  }
+  return null;
 }

@@ -360,7 +360,7 @@ function NextStep({
   report: CheckReport;
   step: NonNullable<CheckReport["nextStep"]>;
 }) {
-  const label = RESULT.nextStep[step.kind](report.companyName, step.domain ?? report.officialDomain ?? "");
+  const label = RESULT.nextStep[step.kind](step.name ?? report.companyName, step.domain ?? report.officialDomain ?? "");
   if (!step.url) {
     return (
       <div className="next-step next-step--ask">
