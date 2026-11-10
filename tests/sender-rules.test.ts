@@ -280,6 +280,7 @@ describe("rule 3 compares against the published recruiting list too", () => {
     hit("https://www.acmeexpress.example/", "Acme Express | Freight", "Acme Express moves freight."),
     hit("https://www.acmeexpress.example/careers", "Careers at Acme Express", "Join Acme Express."),
     hit("https://www.acmeexpress.example/recruiting-fraud", "Recruiting fraud | Acme Express", "Fake Acme Express recruiters."),
+    hit("https://www.linkedin.com/company/acme-express-example", "Acme Express | LinkedIn", "Acme Express. Freight. 200 employees."),
   ];
   const fraudText = `# Recruiting fraud\n\nScammers impersonate Acme Express recruiters. ${"Acme Express moves freight. ".repeat(8)}\n\nAcme Express recruiters only contact candidates from acmeexpress.example or aexp.example.`;
   const input = {

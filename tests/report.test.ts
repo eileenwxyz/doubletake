@@ -270,6 +270,7 @@ describe("recruiting list phrasings", () => {
         officialHits: [
           hit("https://www.globex.example/", "Globex | Insurance", "Globex insures homes and cars."),
           hit(page, "Recruiting scams | Globex Careers Help", "How to spot recruiting scams at Globex."),
+          hit("https://www.linkedin.com/company/globex-example", "Globex | LinkedIn", "Globex. Insurance. 900 employees."),
         ],
         reads: [read(page, "fraud", PHRASINGS[0][1])],
       }),
@@ -279,5 +280,48 @@ describe("recruiting list phrasings", () => {
       "The sender's domain xwf.globex.example is on the recruiting list Globex publishes on globex.example.",
     );
     expect(r.couldntFind.some((c) => c.text.includes("doesn't say which email domains"))).toBe(false);
+  });
+});
+
+// A brand-new company with a polished site and nothing else: the pattern of
+// a fabricated employer (an agency hiring for senior remote roles with no
+// footprint outside its own website).
+describe("a company with nothing outside its own website", () => {
+  const SITE = "https://www.averly.example/";
+  const CAREERS = "https://www.averly.example/company/careers";
+  const TEAM = "https://www.averly.example/company/team";
+  const ABOUT = `A remote-first digital agency. ${"We design websites for organizations across the country. ".repeat(6)}`;
+  const input = acmeInput({
+    company: "Averly",
+    officialHits: [
+      hit(SITE, "Website Design & Digital Marketing: Averly", ABOUT),
+      hit(CAREERS, "Careers | Averly", "Averly is hiring a UX Designer. $130,000 to $175,000."),
+      hit(TEAM, "Meet the team | Averly", "The people behind Averly."),
+    ],
+    warningHits: [],
+    reads: [read(SITE, "home", `# Averly\n\n${ABOUT}`), read(CAREERS, "careers", `# Careers at Averly\n\n${ABOUT}`)],
+  });
+
+  it("is not enough information, never no red flags", () => {
+    const r = ok(input);
+    expect(r.officialDomain).toBe("averly.example");
+    expect(r.verdict).toBe("not_enough");
+    expect(r.subtitle).toBe("We found almost nothing about this company outside its own website.");
+  });
+
+  it("doesn't send the person to the company's own careers page", () => {
+    expect(ok(input).nextStep).toBeNull();
+  });
+
+  it("is no red flags once a page outside its site names it", () => {
+    const r = ok({
+      ...input,
+      officialHits: [
+        ...input.officialHits,
+        hit("https://www.linkedin.com/company/averly-example", "Averly | LinkedIn", "Averly. Digital agency. 40 employees."),
+      ],
+    });
+    expect(r.verdict).toBe("no_red_flags");
+    expect(r.nextStep?.kind).toBe("careers");
   });
 });

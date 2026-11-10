@@ -34,6 +34,8 @@ const groupHeadings = (html: string) =>
 
 const HOME = `# Tinyco\n\n${"Tinyco makes bakery software for small shops. ".repeat(6)}\n\n[Open roles](https://jobs.lever.co/tinyco)`;
 const BOARD = "# Tinyco jobs\n\nBackend Engineer\nRemote\n\nApply now.";
+// A page outside Tinyco's own site that names it.
+const LINKEDIN = hit("https://www.linkedin.com/company/tinyco-example", "Tinyco | LinkedIn", "Tinyco. Bakery software. 12 employees.");
 
 function tinyco(overrides: Partial<CheckInput> = {}): CheckInput {
   return {
@@ -52,8 +54,16 @@ function tinyco(overrides: Partial<CheckInput> = {}): CheckInput {
 }
 
 describe("the job listing meets the evidence minimum", () => {
-  it("is no red flags for a one-page company whose linked job board lists the role", () => {
+  it("is not enough when nothing outside the company's own pages names it", () => {
+    // Its own site and its own job board can't vouch for it on their own.
     const r = ok(tinyco());
+    expect(r.officialDomain).toBe("tinyco.example");
+    expect(r.verdict).toBe("not_enough");
+    expect(r.subtitle).toBe("We found almost nothing about this company outside its own website.");
+  });
+
+  it("is no red flags for a one-page company whose linked job board lists the role", () => {
+    const r = ok(tinyco({ officialHits: [...tinyco().officialHits, LINKEDIN] }));
     expect(r.officialDomain).toBe("tinyco.example");
     expect(r.verdict).toBe("no_red_flags");
     // It decided the verdict, so it is a top reason.
@@ -90,7 +100,9 @@ describe("the job listing meets the evidence minimum", () => {
   });
 
   it("counts on a typed website the search confirms", () => {
-    expect(ok(tinyco({ website: "tinyco.example" })).verdict).toBe("no_red_flags");
+    expect(ok(tinyco({ website: "tinyco.example", officialHits: [...tinyco().officialHits, LINKEDIN] })).verdict).toBe(
+      "no_red_flags",
+    );
   });
 });
 

@@ -42,6 +42,7 @@ function input(locale: string) {
       hit(DE, "Betrugswarnung | Acme", `Acme. ${FILLER}`),
       hit(EN, "Recruiting fraud | Acme", `Acme. ${FILLER}`),
       hit(HOME, "Acme | Industrial equipment", `Acme. ${FILLER}`),
+      hit("https://www.linkedin.com/company/acme-example", "Acme | LinkedIn", "Acme. Industrial equipment. 500 employees."),
     ],
     warningHits: [],
     reads: [read(HOME, "home" as const, `# Acme\n\n${FILLER}`)],
@@ -75,7 +76,7 @@ describe("a page found in several languages", () => {
   });
 
   it("isn't enough evidence on its own", () => {
-    const thin = { ...input("en-us"), officialHits: input("en-us").officialHits.filter((h) => h.url !== HOME), reads: [] };
+    const thin = { ...input("en-us"), officialHits: input("en-us").officialHits.filter((h) => h.url === DE || h.url === EN), reads: [] };
     expect((buildReport(thin) as CheckReport).verdict).toBe("not_enough");
   });
 });

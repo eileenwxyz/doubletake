@@ -678,7 +678,7 @@ describe("an employer whose own pages leave off the suffix", () => {
             hit("https://www.northwind.example/", "Northwind | Logistics software", "Northwind designs logistics software."),
             hit("https://careers.northwind.example/", "Careers at Northwind", "Open roles at Northwind."),
           ]
-        : [];
+        : [hit("https://www.linkedin.com/company/northwind-example", "Northwind | LinkedIn", "Northwind (northwind.example). Logistics software.")];
 
     const r = (await runCheck(req(null, parseJobLink(LINK)))) as CheckReport;
     expect(r.status).toBe("ok");

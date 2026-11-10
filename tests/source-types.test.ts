@@ -389,6 +389,7 @@ describe("brand top-level domains", () => {
         officialHits: [
           hit("https://www.globex.example/", "Globex | Insurance", "Globex insures homes and cars."),
           hit("https://www.globex.example/careers", "Careers | Globex", "Join Globex."),
+          hit("https://www.linkedin.com/company/globex-example", "Globex | LinkedIn", "Globex. Insurance. 900 employees."),
         ],
         reads: [],
         warningHits: [post],
