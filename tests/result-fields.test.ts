@@ -38,6 +38,7 @@ describe("result page fields", () => {
         officialHits: [
           hit("https://www.acme.example/", "Acme | Industrial equipment", "Acme makes anvils."),
           hit("https://www.acme.example/about", "About Acme", "Acme was founded long ago."),
+          hit("https://www.linkedin.com/company/acme-example", "Acme | LinkedIn", "Acme. Industrial equipment."),
         ],
         reads: [read("https://www.acme.example/", "home", `# Acme\n\n${"Acme makes anvils. ".repeat(20)}`)],
       }),

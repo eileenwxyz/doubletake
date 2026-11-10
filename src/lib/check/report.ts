@@ -498,6 +498,23 @@ export function buildReport(input: CheckInput): CheckResponse {
   } else {
     verdict = "no_red_flags";
   }
+  // A company can't vouch for itself. Its own pages can show which domain
+  // is official, but "No red flags" also needs at least one page outside
+  // that domain that names the company (a directory listing, a rating, a
+  // news story, a regulator). A brand-new company with nothing but its own
+  // website gets "Not enough information" instead.
+  const independent = evidence.filter(
+    (e) =>
+      e.type !== "Official" &&
+      e.type !== "General advice" &&
+      registrableDomain(e.url) !== officialDomain &&
+      namesCompanyExactly(`${e.title ?? ""}\n${e.text}`, company, [officialDomain]),
+  );
+  const selfOnly = verdict === "no_red_flags" && independent.length === 0;
+  if (selfOnly) {
+    verdict = "not_enough";
+    subtitle = SUBTITLES.selfOnly;
+  }
   if (!subtitle && anyUnread) subtitle = SUBTITLES.pagesUnchecked;
   if (!subtitle && !input.senderDomain) subtitle = SUBTITLES.companyOnly;
 
@@ -936,7 +953,9 @@ export function buildReport(input: CheckInput): CheckResponse {
     nextStep = { url: imitated.url, kind: "lookalike", domain: toUnicodeDomain(imitated.domain), name: imitated.name };
   } else if (job?.unnamedClient) {
     nextStep = { url: null, kind: "ask_client" };
-  } else if (officialDomain) {
+  } else if (officialDomain && !selfOnly) {
+    // Not when only the company's own site vouches for it: sending someone
+    // to its careers page would lend that site our approval.
     const ownHits = dedupeByUrl(input.officialHits, locale).filter(
       (h) => registrableDomain(h.url) === officialDomain,
     );

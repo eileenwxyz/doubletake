@@ -59,6 +59,8 @@ export const SUBTITLES = {
   pagesUnchecked: "Some pages couldn't be checked.",
   scammersUsedName: "Scammers have used this name.",
   notCompanyChannel: "This address is not one of the company's channels.",
+  // The only reassuring evidence is the company's own website.
+  selfOnly: "We found almost nothing about this company outside its own website.",
   // The warnings search failed; the rest of the check finished.
   partial: "Part of the check didn't finish.",
   // A staffing agency and the client it names both check out.
